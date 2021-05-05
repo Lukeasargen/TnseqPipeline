@@ -1,28 +1,72 @@
 
+IFS=,  # comma delimiter for args
 
-# Get the positinoal arguments
+while getopts :e:i:a:r: flag
+do
+    case $flag in
+        e ) EXPERIMENT_NAME=${OPTARG};;
+        i ) INDEX=${OPTARG};;
+        a ) adapters=($OPTARG) ;;
+        r ) reads=($OPTARG) ;;
+    esac
+done
 
-EXP=$1
-INDEX=$2
-READ=$3
-
-echo "EXPERIMENT : $EXP";
+echo "EXPERIMENT : $EXPERIMENT_NAME";
 echo "INDEX : $INDEX";
-echo "READ : $READ";
+echo "ADAPTERS :";
+for i in "${adapters[@]}";
+do
+    echo "    ${i}";
+done
+echo "READS :";
+for i in "${reads[@]}";
+do
+    echo "    ${i}";
+done
 
-# Adapter argument is not required
-if [ "$4" != "" ]; then
-    ADAPTER=$4
-    echo "Using ILLUMINACLIP and supplied adapter..."
-    echo "ADAPTER : $ADAPTER";
-else
-    echo "Using only ILLUMINACLIP adapter"
-fi
+# Make the adpater list into a string for trimmomatic
+adapter_str="ILLUMINACLIP"  # Always is illuminaclip adpater
+for i in "${adapters[@]}";
+do
+    adapter_str+=":data/$EXPERIMENT_NAME/adapters/${i}";
+done
+# From the manual
+# seedMismatches:palindromeClipThreshold:simpleClipThreshold
+# seedMismatches: specifies the maximum mismatch count which will still allow a full match to be performed
+# palindromeClipThreshold: specifies how accurate the match between the two 'adapter ligated' reads must be for PE palindrome read alignment.
+# simpleClipThreshold: specifies how accurate the match between any adapter etc. sequence must be against a read.
+adapter_str+=":2:30:10";
+# echo $adapter_str;
+
+
+# Process each read
+for i in "${reads[@]}";
+do
+    # Make the file paths as strings
+    input_str=data/$EXPERIMENT_NAME/reads/${i};
+    filename=$(basename -- "${i}");
+    extension="${filename##*.}";
+    filename="${filename%.*}";
+    trimmed_str=data/$EXPERIMENT_NAME/reads/processed/${filename}_trimmed.$extension;
+    mapped_str=data/$EXPERIMENT_NAME/reads/processed/${filename}_trimmed_mapped;
+    index_str=data/$EXPERIMENT_NAME/indexes/$INDEX;
+    echo "input_str : $input_str";
+    echo "trimmed_str : $trimmed_str";
+    echo "mapped_str : $mapped_str";
+    echo "index_str : $index_str";
+
+    # Trim, crop, and output file
+    java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str LEADING:20 TRAILING:20 MINLEN:48 CROP:20;
+
+    # Run the bowtie alignment
+    bowtie -v 3 -a --best --strata -m 1 $index_str $trimmed_str $mapped_str;
+
+    # Create TA map for the read to the index
+    # This will also try to map to a combined TAlist if one exists
+    # python scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i}
 
 
 
-#java -jar Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 Data/$CONTROL.fastq Data/temp.fastq ILLUMINACLIP:Trimmomatic-0.36/PolyC_Adapter.fa:2:30:10 LEADING:20 TRAILING:20 MINLEN:48;
-#java -jar Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 Data/temp.fastq Data/$CONTROL-trimmed.fastq CROP:20;
-# bowtie-1.0.0/bowtie -v 3 -a --best --strata -m 1 -q bowtie-1.0.0/indexes/$BowtieName Data/$CONTROL-trimmed.fastq Data/$CONTROL-trimmed-bowtieMap;
-# TODO - create TA map using the genome index
+
+done
 

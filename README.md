@@ -1,10 +1,10 @@
 
 ## Overview
-1. Setup Workspace
-2. Stage 1 - Process the Reference
-3. Stage 2 - Process the Reads
-4. Stage 3 - Analyze
-5. Stage 4 - Plot
+- Setup Workspace
+- Stage 1 - Process the References
+- Stage 2 - Process the Reads
+- Stage 3 - Analyze
+- Stage 4 - Plot
 
 
 # Setup Workspace
@@ -14,11 +14,12 @@ The project folder will look like this:
   TnseqPipeline/
   ├── data
   │   ├── demo
-  │   |   ├── adapters - used for trimming the reads before alignment
+  │   |   ├── adapters - removed before alignment, fasta or fa files
   │   |   ├── analysis - genehits tables are output here
   │   |   ├── indexes - mapping output by bowtie-build
   │   |   ├── maps - TA maps
-  │   |   ├── reads - tnseq reads and temporary files
+  │   |   ├── reads - reads straight from the machine, likely fastq files
+  │   |   |   └── processed - trimming and alignment outputs go here
   │   |   └── references - genomes and TAlist
   │   └── Your experiments ...
   ├── docs
@@ -78,18 +79,16 @@ Outputs:
 
 Use the save version of Bowtie as stage 1.
 ```
-./scripts/reads1.sh experiment_name genome_name read_name adapter_name
+./scripts/reads1.sh -e experiment_name -i index_name -a adapters -r reads
 
-# Bowtie1
-./scripts/reads1.sh demo 14208c PolyC_Adapter pt1_S1_L001_R1_001 
-./scripts/reads1.sh demo 14208c PolyC_Adapter cf1_S3_L001_R1_001
+# Bowtie 1
+./scripts/reads1.sh -e demo -i 14028c -a PolyC_Adapter.fa -r pt1_S1_L001_R1_001.fastq,cf1_S3_L001_R1_001.fastq
 
-# Bowtie2
-./scripts/reads2.sh demo 14208c PolyC_Adapter pt1_S1_L001_R1_001
-./scripts/reads2.sh demo 14208c PolyC_Adapter cf1_S3_L001_R1_001
+# Bowtie 2
+
 ```
 
-The read scripts are most useful if you want to use default settings for trimming and aligning. If you need to change these parameters, this is the breakdown of each process called in the read scripts.
+The `reads#.sh` scripts are most useful if you want to use default settings for trimming and aligning. If you need to change these parameters, this is the breakdown of each process called in the read scripts.
 
 ## 1. Trim
 
@@ -101,4 +100,5 @@ The read scripts are most useful if you want to use default settings for trimmin
 
 
 # Stage 3 - Analysis
+
 

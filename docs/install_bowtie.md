@@ -1,7 +1,7 @@
 bowtie2: [https://github.com/BenLangmead/bowtie2](https://github.com/BenLangmead/bowtie2)
 ---
 
-# Install bowtie2
+# Install bowtie
 
 There are a few ways to get bowtie2. I use the first method.
 
@@ -21,15 +21,22 @@ __Method 2 - get compiled binaries__
 
 No instructions yet.
 
-## Verify bowtie2 install
+## Verify bowtie install
 
-The binaries are stored in /bin or /usr/bin and they called:
+Run all three of the commands listed in any directory of the linux terminal. All commands should display help messages.
+
 ```
+# Bowtie 1
+bowtie
+bowtie-build
+bowtie-inspect
+
+# Bowtie 2
 bowtie2
 bowtie2-build
 bowtie2-inspect
+
 ```
-Run all three of the commands listed above in any directory of the linux terminal. All commands should display help messages.
 
 Here is the help message from `bowtie2-inspect`:
 

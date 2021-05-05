@@ -1,5 +1,10 @@
+"""
+Creates the TA list from a genome sequence.
+Uses the genbank file to get names and tags for genes.
+"""
+
 import os
-import re
+import re  # Get loci from string
 import argparse
 
 
@@ -25,7 +30,7 @@ def make_TAlist(args):
     output_filename = "data/{}/references/{}_TAlist.tsv".format(args.experiment, args.output)
     print("Output Location:", output_filename)
     if os.path.exists(output_filename):
-        print("* TAlist already exists")
+        print(" * TAlist already exists.")
         # TODO : what is the behavior here?
 
     # This line reads every single line from the fastas file and removes the endline character
