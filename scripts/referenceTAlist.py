@@ -27,7 +27,8 @@ def make_TAlist(args):
     gb_filename = "data/{}/references/{}.gb".format(args.experiment, args.genbank)
     
     # This is where the TAlist is output
-    output_filename = "data/{}/references/{}_TAlist.tsv".format(args.experiment, args.output)
+    output_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.output)
+    merge_filename = "data/{}/maps/{}_TAmap.csv".format(args.experiment, args.output)
     print("Output Location:", output_filename)
     if os.path.exists(output_filename):
         print(" * TAlist already exists.")
@@ -62,7 +63,7 @@ def make_TAlist(args):
     unedited = [line.rstrip('\n') for line in open(gb_filename, 'r')]  # encoding="utf-8"
 
     # Output starts with headers
-    output_array = ["Genome Name\tLoci\tGene ID\tLocus Tag\tStart\tEnd\tDirection\tTA Site"]
+    output_array = ["Accession,Loci,Gene_ID,Locus_Tag,Start,End,Direction,TA_Site"]
 
     # Here we get the gene feature idexes for the next for loop
     features_idxs = [idx for idx in range(len(unedited)) if unedited[idx].startswith("     gene")]
@@ -112,7 +113,7 @@ def make_TAlist(args):
         # from prev_gene_end to gene_start
         # use less than bc the gene_start is part of the gene and not intergenic
         while ta_sites[ta_idx] < gene_start:
-            out = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t".format(geneome_name, ig_loci, "", "", prev_gene_end, gene_start, "", ta_sites[ta_idx])            
+            out = "{},{},{},{},{},{},{},{}".format(geneome_name, ig_loci, "", "", prev_gene_end, gene_start, "", ta_sites[ta_idx])            
             # print(out)
             output_array.append(out)
             ta_idx += 1  # next site
@@ -121,7 +122,7 @@ def make_TAlist(args):
         # from gene_start to gene_end
         # use less thna or equal bc the gene_end is part of the gene
         while ta_sites[ta_idx] <= gene_end:
-            out = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t".format(geneome_name, gene_loci, gene_id, gene_lucas_tag, gene_start, gene_end, gene_direction, ta_sites[ta_idx])
+            out = "{},{},{},{},{},{},{},{}".format(geneome_name, gene_loci, gene_id, gene_lucas_tag, gene_start, gene_end, gene_direction, ta_sites[ta_idx])
             # print(out)
             output_array.append(out)
             ta_idx += 1  # next site
@@ -136,7 +137,7 @@ def make_TAlist(args):
     # prev_gene_end = len(fullseq)
     ig_loci = "IG_{}".format(i+2)  # the last was +1, so now +2
     while ta_sites[ta_idx] < len(fullseq):
-        out = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t".format(geneome_name, ig_loci, "", "", prev_gene_end, gene_start, "", ta_sites[ta_idx])            
+        out = "{},{},{},{},{},{},{},{}".format(geneome_name, ig_loci, "", "", prev_gene_end, len(fullseq), "", ta_sites[ta_idx])
         # print(out)
         output_array.append(out)
         ta_idx += 1  # next site
@@ -144,9 +145,16 @@ def make_TAlist(args):
             break
 
     # Save everything
+    # This is the backup TA list
     with open(output_filename, "w") as filehandle:
         for line in output_array:
             filehandle.writelines("%s\n" % line)
+
+    # This is a blank map that gets filled in the read scripts
+    with open(merge_filename, "w") as filehandle:
+        for line in output_array:
+            filehandle.writelines("%s\n" % line)
+
 
     print(" * Saved TAlist to {}".format(output_filename))
 

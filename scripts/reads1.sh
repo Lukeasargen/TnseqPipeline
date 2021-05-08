@@ -42,6 +42,9 @@ adapter_str+=":2:30:10";
 # Process each read
 for i in "${reads[@]}";
 do
+
+    echo " * Begin Aligning ${i} with $INDEX"
+
     # Make the file paths as strings
     input_str=data/$EXPERIMENT_NAME/reads/${i};
     filename=$(basename -- "${i}");
@@ -50,23 +53,29 @@ do
     trimmed_str=data/$EXPERIMENT_NAME/reads/processed/${filename}_trimmed.$extension;
     mapped_str=data/$EXPERIMENT_NAME/reads/processed/${filename}_trimmed_mapped;
     index_str=data/$EXPERIMENT_NAME/indexes/$INDEX;
-    echo "input_str : $input_str";
-    echo "trimmed_str : $trimmed_str";
-    echo "mapped_str : $mapped_str";
-    echo "index_str : $index_str";
+    # echo "input_str : $input_str";
+    # echo "trimmed_str : $trimmed_str";
+    # echo "mapped_str : $mapped_str";
+    # echo "index_str : $index_str";
 
     # Trim, crop, and output file
-    java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str LEADING:20 TRAILING:20 MINLEN:48 CROP:20;
+    echo " * Begin Trimmomatic for ${i}";
+    # LEADING: Cut bases off the start of a read, if below a threshold quality
+    # TRAILING: Cut bases off the end of a read, if below a threshold quality
+    # MINLEN: Drop the read if it is below a specified length
+    # CROP: Cut the read to a specified length by removing bases from the end
+    # LEADING:20 TRAILING:20 MINLEN:48 CROP:20
+
+    # Important: MINLEN:48 REMOVES READS WITH 2 BAD BP AT EITHER LEADING OR TRAILING
+    java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str TRAILING:20 MINLEN:48 CROP:20;
+
 
     # Run the bowtie alignment
-    bowtie -v 3 -a --best --strata -m 1 $index_str $trimmed_str $mapped_str;
+    echo " * Begin Bowtie1 for ${i} and $INDEX";
+    bowtie -t -v 3 -a --best --strata $index_str $trimmed_str $mapped_str;
 
     # Create TA map for the read to the index
     # This will also try to map to a combined TAlist if one exists
-    # python scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i}
-
-
-
+    python scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i}
 
 done
-

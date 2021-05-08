@@ -9,6 +9,8 @@
 
 # Setup Workspace
 
+Clone instructions
+
 The project folder will look like this:
 ```
   TnseqPipeline/
@@ -35,6 +37,12 @@ The project folder will look like this:
       └── Trimmomatic-0.36
 ```
 
+Install additional python requirements:
+```
+python -m pip install numpy==1.17.4 pandas==1.24 matplotlib==3.1.2
+```
+
+
 # Stage 1 - Process the Reference
 
 Inputs:
@@ -51,7 +59,7 @@ Stage 1 only needs to be done once for a reference. If you add another reference
 
 Bowtie 1 and Bowtie 2 output different files. Be consistent on which version you use in stage 1 and stage 2.
 ```
-./scripts/reference1.sh -e experiment -f fasta -g gb -o out -m
+./scripts/reference1.sh -e experiment -f fasta -g gb -o out
 
 # Bowtie 1
 ./scripts/reference1.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c
@@ -72,12 +80,11 @@ Inputs:
 - TA map - from stage 1
 
 Outputs:
-- Trimmed Reads - removed adpaters
-- Cropped Reads - removed excessively long reads
+- Trimmed Reads - removed adpaters and crop
 - Aligned Reads - mapped reads to the genome
 - TA maps - total alignments for every TA site
 
-Use the save version of Bowtie as stage 1.
+Use the same version of Bowtie as stage 1.
 ```
 ./scripts/reads1.sh -e experiment_name -i index_name -a adapters -r reads
 
@@ -90,13 +97,11 @@ Use the save version of Bowtie as stage 1.
 
 The `reads#.sh` scripts are most useful if you want to use default settings for trimming and aligning. If you need to change these parameters, this is the breakdown of each process called in the read scripts.
 
-## 1. Trim
+## 1. Trim and Crop
 
-## 2. Crop
+## 2. Align
 
-## 3. Align
-
-## 4. Map
+## 3. Map
 
 
 # Stage 3 - Analysis

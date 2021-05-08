@@ -2,7 +2,7 @@ dev
 
 data/*
 !data/blank/
-# !data/demo/
+!data/demo/
 
 .RData
 .Rhistory
