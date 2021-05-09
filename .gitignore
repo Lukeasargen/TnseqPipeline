@@ -2,7 +2,18 @@ dev
 
 data/*
 !data/blank/
+
+# Only push data files
 !data/demo/
+data/demo/analysis/*
+!data/demo/analysis/.keep
+data/demo/indexes/*
+!data/demo/indexes/.keep
+data/demo/maps/*
+!data/demo/maps/.keep
+data/demo/reads/processed/*
+!data/demo/reads/processed/.keep
+
 
 .RData
 .Rhistory

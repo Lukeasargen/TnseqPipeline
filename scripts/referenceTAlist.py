@@ -27,7 +27,7 @@ def make_TAlist(args):
     gb_filename = "data/{}/references/{}.gb".format(args.experiment, args.genbank)
     
     # This is where the TAlist is output
-    output_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.output)
+    output_filename = "data/{}/maps/{}_TAlist.csv".format(args.experiment, args.output)
     merge_filename = "data/{}/maps/{}_TAmap.csv".format(args.experiment, args.output)
     print("Output Location:", output_filename)
     if os.path.exists(output_filename):

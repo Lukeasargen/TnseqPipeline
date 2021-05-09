@@ -33,7 +33,6 @@ The project folder will look like this:
   │   ├── Python scripts
   │   └── Shell scripts
   └── tools
-      ├── Bowtie
       └── Trimmomatic-0.36
 ```
 
@@ -71,6 +70,7 @@ The indexes are output into the indexes folder of your experiment. These files w
 
 ## Notice: The TAlist indicates the location using 1 indexing. This means the first base is labeled 1. For instance, if the gene start is 10, there will be 9 bases before it.
 
+
 # Stage 2 - Process the Reads
 
 Inputs:
@@ -89,7 +89,7 @@ Use the same version of Bowtie as stage 1.
 ./scripts/reads1.sh -e experiment_name -i index_name -a adapters -r reads
 
 # Bowtie 1
-./scripts/reads1.sh -e demo -i 14028c -a PolyC_Adapter.fa -r pt1_S1_L001_R1_001.fastq,cf1_S3_L001_R1_001.fastq
+./scripts/reads1.sh -e demo -i 14028c -a PolyC_Adapter.fa -r c25k.fastq,c50k.fastq,c100k.fastq,s25k.fastq,s50k.fastq,s100k.fastq
 
 # Bowtie 2
 
