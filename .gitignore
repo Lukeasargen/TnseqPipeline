@@ -13,6 +13,7 @@ data/demo/maps/*
 !data/demo/maps/.keep
 data/demo/reads/processed/*
 !data/demo/reads/processed/.keep
+data/demo/references/*.csv
 
 
 .RData

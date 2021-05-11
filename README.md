@@ -11,6 +11,16 @@
 
 Clone instructions
 
+Install additional python requirements:
+```
+# This usually works on wsl
+python -m pip install numpy==1.17.4 pandas==1.24 matplotlib==3.1.2
+# Python 3
+python3 -m pip install numpy==1.17.4 pandas==1.24 matplotlib==3.1.2
+```
+
+## All Done Setup
+
 The project folder will look like this:
 ```
   TnseqPipeline/
@@ -34,11 +44,6 @@ The project folder will look like this:
   │   └── Shell scripts
   └── tools
       └── Trimmomatic-0.36
-```
-
-Install additional python requirements:
-```
-python -m pip install numpy==1.17.4 pandas==1.24 matplotlib==3.1.2
 ```
 
 
@@ -102,6 +107,7 @@ The `reads#.sh` scripts are most useful if you want to use default settings for 
 ## 2. Align
 
 ## 3. Map
+
 
 
 # Stage 3 - Analysis

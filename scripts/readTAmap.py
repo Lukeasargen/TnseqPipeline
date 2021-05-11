@@ -29,7 +29,7 @@ def make_TAmap(args):
     print(" * Creating a TAmap for {} and {}".format(args.index, args.map))
     t0 = time.time()
 
-    talist_filename = "data/{}/maps/{}_TAlist.csv".format(args.experiment, args.index)
+    talist_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.index)
     read_name, extension = os.path.splitext(args.map)
     mapped_filename = "data/{}/reads/processed/{}_trimmed_mapped".format(args.experiment, read_name)
 
@@ -38,7 +38,8 @@ def make_TAmap(args):
     talist = pd.read_csv(talist_filename, delimiter=",")
     # print(talist)
 
-    # Read the map file
+    # Read the map file output by bowtie
+    # The file has no headers so these headers below are added to the dataframe
     map_headers = ["Read_ID", "Direction", "Accession", "Location", "Sequence", "Quality", "Counts?", "??"]
     mapped = pd.read_csv(mapped_filename, delimiter="\t", header=None, names=map_headers)
     # print(mapped)
@@ -77,9 +78,9 @@ def make_TAmap(args):
     # print(forward_locations[:8])
 
     forward_hist, edges = np.histogram(forward_locations, bins=bins, density=False)
-    # First add the first bin to the end, the genome is circular
-    forward_hist[-1] += forward_hist[1:]
-    #  Now remove the first bin, skip it with [1:]
+    # If the genome is CIRCULAR, add the first bin to the end
+    forward_hist[-1] += forward_hist[1]
+    # Now remove the first bin, skip it with [1:]
     forward_hist = forward_hist[1:]
 
     # Reverse Counts
@@ -93,8 +94,8 @@ def make_TAmap(args):
     # print(reverse_locations[:8])
 
     reverse_hist, edges = np.histogram(reverse_locations, bins=bins, density=False)
-    # First add the last bin to the beginning bin, the genome is circular
-    reverse_hist[0] += reverse_hist[:-1]
+    # If the genome is CIRCULAR, add the last bin to the beginning bin
+    reverse_hist[0] += reverse_hist[-1]
     # Now remove the last bin, skip it with [:-1]
     reverse_hist = reverse_hist[:-1]
 
@@ -105,11 +106,12 @@ def make_TAmap(args):
     ax[1].plot(bins[1:-1], reverse_hist, 'tab:red')
     ax[1].set_title("Reverse Hits")
     fig.tight_layout()
-    plt.savefig("data/{}/maps/{}_all_hits.png".format(args.experiment, read_name))
+    plt.savefig("data/{}/maps/{}_{}_all_hits.png".format(args.experiment, args.index, read_name))
 
 
     # Save to map file
-    tamap_filename = "data/{}/maps/{}_TAmap.csv".format(args.experiment, read_name)
+    # Mapped data for only this read
+    tamap_filename = "data/{}/maps/{}_{}_TAmap.csv".format(args.experiment, args.index, read_name)
     print(" * Saving {}".format(tamap_filename))
     talist[f"{read_name}_forward"] = pd.Series(forward_hist)
     talist[f"{read_name}_reverse"] = pd.Series(reverse_hist)
@@ -119,20 +121,35 @@ def make_TAmap(args):
 
     # Summarize Mapping
     # Remove all intergenic regions and count gene hits
-    grouped = talist.groupby("Locus_Tag", dropna=True)
-    hits_per_gene = grouped[f"{read_name}_forward"].sum()
-    site_per_gene = grouped[f"{read_name}_forward"].count()
-    hit_genes = hits_per_gene.astype(bool).sum(axis=0)
+    grouped = talist.groupby("Gene_ID", dropna=True)
+    gene_total_ta_sites = grouped["TA_Site"].count().sum(axis=0)
+    genes_w_ta = len(grouped)
+
+    # This data is a row for each gene with the sum of the counts
+    hits_per_gene_forward = grouped[f"{read_name}_forward"].sum()
+    hits_per_gene_reverse = grouped[f"{read_name}_reverse"].sum()
+
+    # This is the number of TA sites within a gene that were hit
+    genelist = talist[talist['Gene_ID'].notna()]
+    gene_ta_forward = genelist[f"{read_name}_forward"].astype(bool).sum(axis=0)
+    gene_ta_reverse = genelist[f"{read_name}_reverse"].astype(bool).sum(axis=0)
+
+    # These are integers of the number of genes hit
+    hit_genes_forward = hits_per_gene_forward.astype(bool).sum(axis=0)
+    hit_genes_reverse = hits_per_gene_reverse.astype(bool).sum(axis=0)
+    hit_genes = (hits_per_gene_forward+hits_per_gene_reverse).astype(bool).sum(axis=0)
+
 
     stat_str = "   Summary of {} Mapping to {}.".format(read_name,  args.index)
     stat_str += "\n     Duration : {:.3f} seconds.".format(duration)
     stat_str += "\n     Total Reads : {}".format(len(mapped.index))
     stat_str += "\n     Total TA Sites : {}".format(total_ta_sites)
     stat_str += "\n     Total Hit TA Sites : {}".format(np.count_nonzero(forward_hist+reverse_hist))
-    stat_str += "\n     Percentage Hit : {:.2f}".format(100*np.count_nonzero(forward_hist+reverse_hist)/total_ta_sites)
-    stat_str += "\n     Total Genes : {}".format(len(hits_per_gene))
+    stat_str += "\n     Percentage Hit TA Sites: {:.2f}".format(100*np.count_nonzero(forward_hist+reverse_hist)/total_ta_sites)
+    stat_str += "\n     Total Gene TA Sites : {}".format(gene_total_ta_sites)
+    stat_str += "\n     Total Genes with TA Sites : {}".format(genes_w_ta)
     stat_str += "\n     Hit Genes : {}".format(hit_genes)
-    stat_str += "\n     Percentage Hit Genes : {:.2f}".format(100*hit_genes/len(hits_per_gene))
+    stat_str += "\n     Percentage Hit Genes : {:.2f}".format(100*hit_genes/genes_w_ta)
 
     # Forward
     stat_str += "\n   Forward Stats:"
@@ -146,6 +163,12 @@ def make_TAmap(args):
     stat_str += "\n     Hit TA Sites : {}".format(np.count_nonzero(forward_hist))
     stat_str += "\n     Percentage Hit TA Sites : {:.2f}".format(100*np.count_nonzero(forward_hist)/total_ta_sites)
 
+    stat_str += "\n     Hit Gene TA Sites : {}".format(gene_ta_forward)
+    stat_str += "\n     Percentage Hit Gene TA Sites : {:.2f}".format(100*gene_ta_forward/gene_total_ta_sites)
+
+    stat_str += "\n     Hit Genes : {}".format(hit_genes_forward)
+    stat_str += "\n     Percentage Hit Genes : {:.2f}".format(100*hit_genes_forward/genes_w_ta)
+
     # Reverse
     stat_str += "\n   Reverse Stats:"
     stat_str += "\n     Total Reads : {}".format(len(reverse_locations))
@@ -157,19 +180,25 @@ def make_TAmap(args):
     stat_str += "\n     Standard Deviation : {:.3f}".format(np.std(reverse_hist))
     stat_str += "\n     Hit TA Sites : {}".format(np.count_nonzero(reverse_hist))
     stat_str += "\n     Percentage Hit TA Sites : {:.2f}".format(100*np.count_nonzero(reverse_hist)/total_ta_sites)
+
+    stat_str += "\n     Hit Gene TA Sites : {}".format(gene_ta_reverse)
+    stat_str += "\n     Percentage Hit Gene TA Sites : {:.2f}".format(100*gene_ta_reverse/gene_total_ta_sites)
+
+    stat_str += "\n     Hit Genes : {}".format(hit_genes_reverse)
+    stat_str += "\n     Percentage Hit Genes : {:.2f}".format(100*hit_genes_reverse/genes_w_ta)
     print(stat_str)
 
-    stat_filename = "data/{}/maps/{}_stats.txt".format(args.experiment, read_name)
+    stat_filename = "data/{}/maps/{}_{}_stats.txt".format(args.experiment, args.index, read_name)
     with open(stat_filename, "w") as f:
         f.write(stat_str)
 
 
 def merge_TAmap(args):
     read_name, extension = os.path.splitext(args.map)
-    tamap_filename = "data/{}/maps/{}_TAmap.csv".format(args.experiment, read_name)
+    tamap_filename = "data/{}/maps/{}_{}_TAmap.csv".format(args.experiment, args.index, read_name)
     tamap = pd.read_csv(tamap_filename, delimiter=",")
 
-    merge_filename = "data/{}/maps/{}_TAmap.csv".format(args.experiment, args.index)
+    merge_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.index)
     merge = pd.read_csv(merge_filename, delimiter=",")
 
     merged = pd.merge(merge, tamap)

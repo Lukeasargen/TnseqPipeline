@@ -76,6 +76,6 @@ do
 
     # Create TA map for the read to the index
     # This will also try to map to a combined TAlist if one exists
-    python scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i}
+    python scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i};
 
 done

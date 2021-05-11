@@ -27,8 +27,8 @@ def make_TAlist(args):
     gb_filename = "data/{}/references/{}.gb".format(args.experiment, args.genbank)
     
     # This is where the TAlist is output
-    output_filename = "data/{}/maps/{}_TAlist.csv".format(args.experiment, args.output)
-    merge_filename = "data/{}/maps/{}_TAmap.csv".format(args.experiment, args.output)
+    output_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.output)
+    merge_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.output)
     print("Output Location:", output_filename)
     if os.path.exists(output_filename):
         print(" * TAlist already exists.")
@@ -106,6 +106,16 @@ def make_TAlist(args):
                 gene_lucas_tag = line[12:-1]
             j += 1  # go to the next lin
 
+        if gene_id == "":
+            # In mapping, it was hard to group when the gene ids were
+            # sometimes blank. This step simply puts a useful name in
+            #  gene_id column so it can be used for grouping.
+            # print("G_{} : Has no name. locus={}".format(i+1, gene_lucas_tag))
+            if gene_lucas_tag != "":
+                gene_id = gene_lucas_tag
+            else:
+                gene_id = gene_loci
+
         # Now we have all the information about the gene
         # Using the loci, we can get the TA sites for the intergenic region and the gene
 
@@ -120,7 +130,7 @@ def make_TAlist(args):
 
         # Now the gene
         # from gene_start to gene_end
-        # use less thna or equal bc the gene_end is part of the gene
+        # use less than or equal bc the gene_end is part of the gene
         while ta_sites[ta_idx] <= gene_end:
             out = "{},{},{},{},{},{},{},{}".format(geneome_name, gene_loci, gene_id, gene_lucas_tag, gene_start, gene_end, gene_direction, ta_sites[ta_idx])
             # print(out)
