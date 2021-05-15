@@ -7,6 +7,8 @@ import os
 import re  # Get loci from string
 import argparse
 
+from util import read_fasta
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -30,22 +32,9 @@ def make_TAlist(args):
     output_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.output)
     merge_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.output)
     print("Output Location:", output_filename)
-    if os.path.exists(output_filename):
-        print(" * TAlist already exists.")
-        # TODO : what is the behavior here?
 
-    # This line reads every single line from the fastas file and removes the endline character
-    unedited = [line.rstrip('\n') for line in open(fasta_filename, 'r')]  # encoding="utf-8"
-
-    # Combine all the lines into one long string
-    # This is indexed from 1: because the first line is not part of the sequence
-    fullseq = "".join(unedited[1:])
+    fullseq, geneome_name = read_fasta(fasta_filename, ret_name=True)
     print("Full Sequence Length =", len(fullseq))
-
-    # However, we do need the name of the genenome
-    # We get that from the first line, it's the first string before space but without the first character
-    # It's wrapped as string just in case
-    geneome_name = str(unedited[0].split()[0][1:])
     print("Geneome name:", geneome_name)
 
     # Now, we find every single TA site from the fullseq string

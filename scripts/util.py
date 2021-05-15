@@ -1,47 +1,99 @@
 
 
+genehits_nonread_headers = 7
 
-def normalize_genehits(genehits, total=True, length=None, length_first=True):
-    """ Normalize a genehits dataframe.
-        total: bool, True norms by total number of reads, False 
-            skips this step. default is True.
-        length: str, None does not normalize by length, "Gene_Length" 
-            and "TA_Count" normalize by their respective column, default
-            is None
-        length_first: bool, True performs length first, False is second,
-            default is True
 
-        returns: normalized dataframe
-    """
-    # Note : all normalization is done by multipling by greater than 1
-    # This makes sure that you can threshold by minimum count of 1 as a lower bound
+def read_fasta(filename, ret_name=False):
+    # This line reads every single line from the fastas file and removes the endline character
+    unedited = [line.rstrip('\n') for line in open(filename, 'r')]  # encoding="utf-8"
+    # Combine all the lines into one long string
+    # This is indexed from 1: because the first line is not part of the sequence
+    fullseq = "".join(unedited[1:])
+    if ret_name:
+        # We get name from the first line, it's the first string before space but without the first character
+        # It's wrapped as string just in case
+        name = unedited[0].split()[0][1:]
+        return fullseq, name
 
-    map_names = genehits.columns[6:]
+    return fullseq
 
-    # Normalize by gene length
-    if length and length_first:
-        max_length = max(genehits[length])
-        for name in map_names:
-            genehits[name] = (max_length/genehits[length])*genehits[name]
 
-    # Normalize for total reads
-    if total:
-        totals = {}
-        for name in map_names:
-            totals.update({name: genehits[name].sum()})
-        max_total = max(totals.values())
-        for k,v in totals.items():
-            genehits[k] = (max_total/v)*genehits[k]
 
-    # Normalize by gene length
-    if length and not length_first:
-        max_length = max(genehits[length])
-        for name in map_names:
-            genehits[name] = (max_length/genehits[length])*genehits[name]
+def tamap_to_genehits(tamap, fasta_filename=None):
+    """ Covert a TAmap table into a GeneHits table """
+    tamap = tamap.copy()
 
-    # Normalization is done
+    # Remove the intergenic regions
+    genemap = tamap[tamap['Gene_ID'].notna()]
+
+    # Get all the names by removing the suffix from the column names
+    # and making a set (a set has no duplicates)
+    # TAmap has 8 non-read headers
+    map_names = set([ n for n in genemap.columns[8:] if n[-3:]=="sum" ])
+
+    # Get other gene data into a genehits df
+    grouped = genemap.groupby("Gene_ID", as_index=False)
+    genehits = grouped.agg({"Start": "first", "End": 'first', "Direction": "first"})
+    genehits["TA_Count"] = grouped["TA_Site"].count()["TA_Site"]
+    genehits["Gene_Length"] = 1+genehits["End"] - genehits["Start"]
+
+    # GC content
+    genehits["GC"] = None
+    if fasta_filename:
+        full_seq = read_fasta(fasta_filename)
+        for i, row in genehits.iterrows():
+            seq = full_seq[row["Start"]:row["End"]+1].lower()
+            gc = seq.count('g') + seq.count('c')
+            genehits.loc[i, "GC"] = (gc)/len(seq)
+
+    # Add the forward and reverse reads
+    gene_hits_sum = grouped.sum()  # Get the number of hits per gene
+    for name in map_names:
+        genehits[name] = gene_hits_sum[name]
+
     return genehits
 
 
+
+def total_count_norm(genehits, columns=None):
+    """ Normalize genehits using the total reads."""
+    temp = genehits.copy()
+    if columns==None:
+        columns = temp.columns[genehits_nonread_headers:]
+    multiply_factor = {}
+    for name in columns:
+        multiply_factor.update({name: temp[name].sum()})
+    max_total = max(multiply_factor.values())
+    # print("multiply_factor :", multiply_factor)
+    for k,v in multiply_factor.items():
+        # max/N >= 1
+        temp[k] = (max_total/v)*temp[k]
+    return temp
+
+
+def quantile_norm(genehits, q=0.5, columns=None):
+    """ Normalize genehits using the q'th quantile."""
+    temp = genehits.copy()
+    if columns==None:
+        columns = temp.columns[genehits_nonread_headers:]
+    multiply_factor = {}
+    for name in columns:
+        multiply_factor.update({name: temp[name].quantile(q=q)+1})
+    max_total = max(multiply_factor.values())
+    # print("multiply_factor :", multiply_factor)
+    for k,v in multiply_factor.items():
+        # max/N >= 1
+        temp[k] = (max_total/v)*temp[k]
+    return temp
+
+def length_norm(genehits, length="Gene_Length"):
+    """ Normalize genehits using the a length column. """
+    temp = genehits.copy()
+    map_names = temp.columns[genehits_nonread_headers:]
+    # Normalize by gene length
+    max_length = max(temp[length])
+    for name in map_names:
+        temp[name] = (max_length/temp[length])*temp[name]
+    return temp
 
 

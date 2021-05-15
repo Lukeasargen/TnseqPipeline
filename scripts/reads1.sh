@@ -58,21 +58,33 @@ do
     # echo "mapped_str : $mapped_str";
     # echo "index_str : $index_str";
 
-    # Trim, crop, and output file
-    echo " * Begin Trimmomatic for ${i}";
-    # LEADING: Cut bases off the start of a read, if below a threshold quality
-    # TRAILING: Cut bases off the end of a read, if below a threshold quality
-    # MINLEN: Drop the read if it is below a specified length
-    # CROP: Cut the read to a specified length by removing bases from the end
-    # LEADING:20 TRAILING:20 MINLEN:48 CROP:20
+    # If the files exist, then skip the processing
+    if [[ -f $trimmed_str ]]
+    then
+        echo "$trimmed_str exists on your filesystem."
+    else
+        # Trim, crop, and output file
+        echo " * Begin Trimmomatic for ${i}";
+        # LEADING: Cut bases off the start of a read, if below a threshold quality
+        # TRAILING: Cut bases off the end of a read, if below a threshold quality
+        # MINLEN: Drop the read if it is below a specified length
+        # CROP: Cut the read to a specified length by removing bases from the end
+        # LEADING:20 TRAILING:20 MINLEN:48 CROP:20
 
-    # Important: MINLEN:48 REMOVES READS WITH 2 BAD BP AT EITHER LEADING OR TRAILING
-    java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str TRAILING:20 MINLEN:48 CROP:20;
+        # Important: MINLEN:48 REMOVES READS WITH 2 BAD BP AT EITHER LEADING OR TRAILING
+        java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str TRAILING:20 MINLEN:48 CROP:20;
+    fi
 
-
-    # Run the bowtie alignment
-    echo " * Begin Bowtie1 for ${i} and $INDEX";
-    bowtie -t -v 3 -a --best --strata $index_str $trimmed_str $mapped_str;
+    if [[ -f $mapped_str ]]
+    then
+        echo "$mapped_str exists on your filesystem."
+    else
+        # Run the bowtie alignment
+        echo " * Begin Bowtie1 for ${i} and $INDEX";
+        # TODO : Find the mismatch argument?
+        # -m 1
+        bowtie -t -v 3 -a --best --strata $index_str $trimmed_str $mapped_str;
+    fi
 
     # Create TA map for the read to the index
     # This will also try to map to a combined TAlist if one exists
