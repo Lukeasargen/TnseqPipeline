@@ -12,7 +12,6 @@ from util import read_fasta
 
 def get_args():
     parser = argparse.ArgumentParser()
-    # Init and setup
     parser.add_argument('--experiment', type=str)
     parser.add_argument('--fasta', type=str)
     parser.add_argument('--genbank', type=str)

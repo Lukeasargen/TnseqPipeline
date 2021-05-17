@@ -18,7 +18,6 @@ from util import total_count_norm
 
 def get_args():
     parser = argparse.ArgumentParser()
-    # Init and setup
     parser.add_argument('--experiment', type=str)
     parser.add_argument('--index', type=str)
     parser.add_argument('--map', type=str)
