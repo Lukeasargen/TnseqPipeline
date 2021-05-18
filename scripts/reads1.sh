@@ -115,5 +115,5 @@ echo "$cmd_str";
 printf "\nThese are all the reads in the experiment...\n"
 for item in "${reads[@]}"; do
     filename=$(basename -- "${item}");
-    printf '%s\n' "$filename"
+    printf '%s\n' "${filename%.*}"
 done
