@@ -64,7 +64,7 @@ do
         echo "$trimmed_str exists on your filesystem."
     else
         # Trim, crop, and output file
-        echo " * Begin Trimmomatic for ${i}";
+        echo " * Begin Trimmomatic for ${i}...";
         # LEADING: Cut bases off the start of a read, if below a threshold quality
         # TRAILING: Cut bases off the end of a read, if below a threshold quality
         # MINLEN: Drop the read if it is below a specified length
@@ -80,14 +80,40 @@ do
         echo "$mapped_str exists on your filesystem."
     else
         # Run the bowtie alignment
-        echo " * Begin Bowtie1 for ${i} and $INDEX";
+        echo " * Begin Bowtie1 for ${i} and $INDEX...";
         # TODO : Find the mismatch argument?
         # -m 1
         bowtie -t -v 3 -a --best --strata $index_str $trimmed_str $mapped_str;
     fi
 
     # Create TA map for the read to the index
-    # This will also try to map to a combined TAlist if one exists
-    python3 scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i};
+    # This will also try to map to a combined TAmap if one exists
+    echo " * Creating TAmap for ${i} and $INDEX...";
+    # python3 scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i};
 
+done
+
+echo "Finished processing the reads.";
+# Generate the next possible command
+
+cmd_str="python3 scripts/analysis.py --experiment $EXPERIMENT_NAME";
+
+reads_dir=data/$EXPERIMENT_NAME/reads/
+
+shopt -s extglob nullglob globstar
+reads=($reads_dir*.fastq)
+reads+=($reads_dir*.fq)
+
+cmd_str+=" --controls $(basename -- "${reads[0]}")";
+cmd_str+=" $(basename -- "${reads[1]}")";
+cmd_str+=" --samples $(basename -- "${reads[2]}")";
+cmd_str+=" $(basename -- "${reads[3]}")";
+
+printf "\nExample command for analysis:\n";
+echo "$cmd_str";
+
+printf "\nThese are all the reads in the experiment...\n"
+for item in "${reads[@]}"; do
+    filename=$(basename -- "${item}");
+    printf '%s\n' "$filename"
 done
