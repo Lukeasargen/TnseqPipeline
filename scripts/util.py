@@ -1,3 +1,4 @@
+import numpy as np
 
 
 genehits_nonread_headers = 7
@@ -18,42 +19,38 @@ def read_fasta(filename, ret_name=False):
     return fullseq
 
 
-
-def tamap_to_genehits(tamap, fasta_filename=None):
+def tamap_to_genehits(tamap):
     """ Covert a TAmap table into a GeneHits table """
     tamap = tamap.copy()
-
     # Remove the intergenic regions
     genemap = tamap[tamap['Gene_ID'].notna()]
-
     # Get all the names by removing the suffix from the column names
     # and making a set (a set has no duplicates)
     # TAmap has 8 non-read headers
     map_names = set([ n for n in genemap.columns[8:] if n[-3:]=="sum" ])
-
     # Get other gene data into a genehits df
     grouped = genemap.groupby("Gene_ID", as_index=False)
     genehits = grouped.agg({"Start": "first", "End": 'first', "Direction": "first"})
     genehits["TA_Count"] = grouped["TA_Site"].count()["TA_Site"]
     genehits["Gene_Length"] = 1+genehits["End"] - genehits["Start"]
-
-    # GC content
-    genehits["GC"] = None
-    if fasta_filename:
-        full_seq = read_fasta(fasta_filename)
-        for i, row in genehits.iterrows():
-            seq = full_seq[row["Start"]:row["End"]+1].lower()
-            gc = seq.count('g') + seq.count('c')
-            genehits.loc[i, "GC"] = (gc)/len(seq)
-
     # Add the forward and reverse reads
+    genehits["GC"] = None  # Blank
     gene_hits_sum = grouped.sum()  # Get the number of hits per gene
     for name in map_names:
         genehits[name] = gene_hits_sum[name]
-
     return genehits
 
 
+def gc_content(genehits, fasta_filename):
+    """ Calculate Gc content from a fasta sequence """
+    genehits = genehits.copy()
+    full_seq = read_fasta(fasta_filename)
+    for i, row in genehits.iterrows():
+        seq = full_seq[row["Start"]:row["End"]+1].lower()
+        gc = seq.count('g') + seq.count('c')
+        genehits.loc[i, "GC"] = (gc)/len(seq)
+    return genehits
+ 
 
 def total_count_norm(genehits, columns=None):
     """ Normalize genehits using the total reads."""
@@ -86,6 +83,7 @@ def quantile_norm(genehits, q=0.5, columns=None):
         temp[k] = (max_total/v)*temp[k]
     return temp
 
+
 def length_norm(genehits, length="Gene_Length"):
     """ Normalize genehits using the a length column. """
     temp = genehits.copy()
@@ -95,5 +93,4 @@ def length_norm(genehits, length="Gene_Length"):
     for name in map_names:
         temp[name] = (max_length/temp[length])*temp[name]
     return temp
-
 
