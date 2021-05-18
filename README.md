@@ -4,19 +4,19 @@
 - Stage 1 - Process the References
 - Stage 2 - Process the Reads
 - Stage 3 - Analyze
-- Stage 4 - Plot
 
 
 # Setup Workspace
 
-Clone instructions
+Open a terminal and chage directory to the location you want as your workspace. Run this command to clone this repository:
+
+```
+git clone https://github.com/Lukeasargen/TnseqPipeline.git
+```
 
 Install additional python requirements:
 ```
-# This usually works on wsl
-python -m pip install numpy==1.17.4 pandas==1.24 matplotlib==3.1.2
-# Python 3
-python3 -m pip install numpy==1.17.4 pandas==1.24 matplotlib==3.1.2
+python3 -m pip install numpy==1.17.4 pandas==1.2.4 matplotlib==3.1.2 scipy==1.3.3
 ```
 
 ## All Done Setup
@@ -55,22 +55,22 @@ Inputs:
 
 Outputs:
 - Indexes - used by Bowtie for alignment
-- TAlist - table seperated file marking all TA sites with indicators for genome and gene
+- TAmap - csv marking all TA sites with indicators for genome and gene. This file has TA sites as rows and read data down the columns. 
 
-Stage 1 only needs to be done once for a reference. If you add another reference, the same scripts have an optional argument to append the existing TAlists into one merged TAlist.
+## *Stage 1 only needs to be done once for a reference.*
 
 ## Create the Bowtie index and TAlist
 
-Bowtie 1 and Bowtie 2 output different files. Be consistent on which version you use in stage 1 and stage 2.
+<!-- Bowtie 1 and Bowtie 2 output different files. Be consistent on which version you use in stage 1 and stage 2. -->
 ```
 ./scripts/reference1.sh -e experiment -f fasta -g gb -o out
 
 # Bowtie 1
 ./scripts/reference1.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c
-
-# Bowtie 2
-./scripts/reference2.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c
 ```
+<!-- # Bowtie 2
+./scripts/reference2.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c -->
+
 The indexes are output into the indexes folder of your experiment. These files will only be used by bowtie during the alignment step of processing reads.
 
 ## Notice: The TAlist indicates the location using 1 indexing. This means the first base is labeled 1. For instance, if the gene start is 10, there will be 9 bases before it.
@@ -85,19 +85,16 @@ Inputs:
 - TA map - from stage 1
 
 Outputs:
-- Trimmed Reads - removed adpaters and crop
+- Trimmed Reads - no adpaters and trimmed
 - Aligned Reads - mapped reads to the genome
 - TA maps - total alignments for every TA site
 
-Use the same version of Bowtie as stage 1.
+<!-- Use the same version of Bowtie as stage 1. -->
 ```
 ./scripts/reads1.sh -e experiment_name -i index_name -a adapters -r reads
 
 # Bowtie 1
-./scripts/reads1.sh -e demo -i 14028c -a PolyC_Adapter.fa -r c25k.fastq,c50k.fastq,c100k.fastq,s25k.fastq,s50k.fastq,s100k.fastq
-
-# Bowtie 2
-
+./scripts/reads1.sh -e demo -i 14028c -a PolyC_Adapter.fa -r c25k.fastq,c50k.fastq,s25k.fastq,s50k.fastq
 ```
 
 The `reads#.sh` scripts are most useful if you want to use default settings for trimming and aligning. If you need to change these parameters, this is the breakdown of each process called in the read scripts.
@@ -112,4 +109,6 @@ The `reads#.sh` scripts are most useful if you want to use default settings for 
 
 # Stage 3 - Analysis
 
-
+```
+python3 scripts/analysis.py --experiment demo --controls c25k c50k --samples s25k s50k
+```
