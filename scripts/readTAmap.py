@@ -131,7 +131,6 @@ def make_TAmap(args):
     print(" * Saving {}".format(genehits_filename))
     genehits.to_csv(genehits_filename, header=True, index=False)
 
-    # TODO : this is not useful
     # Normalize the genehits table
     normed = total_count_norm(genehits)
     normed_filename = "data/{}/maps/{}_GenehitsNorm.csv".format(args.experiment, args.index)
@@ -159,59 +158,55 @@ def make_TAmap(args):
     hit_genes = (hits_per_gene_forward+hits_per_gene_reverse).astype(bool).sum(axis=0)
 
 
-    stat_str = "   Summary of {} aapping to {}.".format(read_name,  args.index)
-    stat_str += "\n     Duration : {:.3f} seconds.".format(duration)
-    stat_str += "\n     Total Reads : {}".format(len(mapped.index))
-    stat_str += "\n     Total TA Sites : {}".format(total_ta_sites)
-    stat_str += "\n     Total Hit TA Sites : {}".format(np.count_nonzero(forward_hist+reverse_hist))
-    stat_str += "\n     Percentage Hit TA Sites: {:.2f}".format(100*np.count_nonzero(forward_hist+reverse_hist)/total_ta_sites)
-    stat_str += "\n     Total Gene TA Sites : {}".format(gene_total_ta_sites)
-    stat_str += "\n     Total Genes with TA Sites : {}".format(genes_w_ta)
-    stat_str += "\n     Hit Genes : {}".format(hit_genes)
-    stat_str += "\n     Percentage Hit Genes : {:.2f}".format(100*hit_genes/genes_w_ta)
+    stat_str = "Summary of {} mapping to {}.".format(read_name,  args.index)
+    stat_str += "\nDuration : {:.3f} seconds.".format(duration)
+    stat_str += "\nTotal Reads : {}".format(len(mapped.index))
+    stat_str += "\nTotal TA Sites : {}".format(total_ta_sites)
+    stat_str += "\nTotal Hit TA Sites : {}".format(np.count_nonzero(forward_hist+reverse_hist))
+    stat_str += "\nPercentage Hit TA Sites: {:.2f}%".format(100*np.count_nonzero(forward_hist+reverse_hist)/total_ta_sites)
+    stat_str += "\nTotal Gene TA Sites : {}".format(gene_total_ta_sites)
+    stat_str += "\nTotal Genes with TA Sites : {}".format(genes_w_ta)
+    stat_str += "\nHit Genes : {}".format(hit_genes)
+    stat_str += "\nPercentage Hit Genes : {:.2f}%".format(100*hit_genes/genes_w_ta)
 
     # Forward
-    stat_str += "\n   Forward Stats:"
-    stat_str += "\n     Total Reads : {}".format(len(forward_locations))
-    stat_str += "\n     Max : {}".format(np.max(forward_hist))
-    stat_str += "\n     Mean : {:.3f}".format(np.mean(forward_hist))
+    stat_str += "\nForward Stats:"
+    stat_str += "\nTotal Reads : {}".format(len(forward_locations))
+    stat_str += "\nMax : {}".format(np.max(forward_hist))
+    stat_str += "\nMean : {:.3f}".format(np.mean(forward_hist))
     nonzero_mean = np.true_divide(forward_hist.sum(), (forward_hist!=0).sum())
-    stat_str += "\n     Nonzero Mean : {:.3f}".format(nonzero_mean)
-    stat_str += "\n     Variance : {:.3f}".format(np.var(forward_hist))
-    stat_str += "\n     Standard Deviation : {:.3f}".format(np.std(forward_hist))
-    stat_str += "\n     Hit TA Sites : {}".format(np.count_nonzero(forward_hist))
-    stat_str += "\n     Percentage Hit TA Sites : {:.2f}".format(100*np.count_nonzero(forward_hist)/total_ta_sites)
-
-    stat_str += "\n     Hit Gene TA Sites : {}".format(gene_ta_forward)
-    stat_str += "\n     Percentage Hit Gene TA Sites : {:.2f}".format(100*gene_ta_forward/gene_total_ta_sites)
-
-    stat_str += "\n     Hit Genes : {}".format(hit_genes_forward)
-    stat_str += "\n     Percentage Hit Genes : {:.2f}".format(100*hit_genes_forward/genes_w_ta)
+    stat_str += "\nNonzero Mean : {:.3f}".format(nonzero_mean)
+    stat_str += "\nVariance : {:.3f}".format(np.var(forward_hist))
+    stat_str += "\nStandard Deviation : {:.3f}".format(np.std(forward_hist))
+    stat_str += "\nHit TA Sites : {}".format(np.count_nonzero(forward_hist))
+    stat_str += "\nPercentage Hit TA Sites : {:.2f}%".format(100*np.count_nonzero(forward_hist)/total_ta_sites)
+    stat_str += "\nHit Gene TA Sites : {}".format(gene_ta_forward)
+    stat_str += "\nPercentage Hit Gene TA Sites : {:.2f}%".format(100*gene_ta_forward/gene_total_ta_sites)
+    stat_str += "\nHit Genes : {}".format(hit_genes_forward)
+    stat_str += "\nPercentage Hit Genes : {:.2f}%".format(100*hit_genes_forward/genes_w_ta)
 
     # Reverse
-    stat_str += "\n   Reverse Stats:"
-    stat_str += "\n     Total Reads : {}".format(len(reverse_locations))
-    stat_str += "\n     Max : {}".format(np.max(reverse_hist))
-    stat_str += "\n     Mean : {:.3f}".format(np.mean(reverse_hist))
+    stat_str += "\nReverse Stats:"
+    stat_str += "\nTotal Reads : {}".format(len(reverse_locations))
+    stat_str += "\nMax : {}".format(np.max(reverse_hist))
+    stat_str += "\nMean : {:.3f}".format(np.mean(reverse_hist))
     nonzero_mean = np.true_divide(reverse_hist.sum(), (reverse_hist!=0).sum())
-    stat_str += "\n     Nonzero Mean : {:.3f}".format(nonzero_mean)
-    stat_str += "\n     Variance : {:.3f}".format(np.var(reverse_hist))
-    stat_str += "\n     Standard Deviation : {:.3f}".format(np.std(reverse_hist))
-    stat_str += "\n     Hit TA Sites : {}".format(np.count_nonzero(reverse_hist))
-    stat_str += "\n     Percentage Hit TA Sites : {:.2f}".format(100*np.count_nonzero(reverse_hist)/total_ta_sites)
-
-    stat_str += "\n     Hit Gene TA Sites : {}".format(gene_ta_reverse)
-    stat_str += "\n     Percentage Hit Gene TA Sites : {:.2f}".format(100*gene_ta_reverse/gene_total_ta_sites)
-
-    stat_str += "\n     Hit Genes : {}".format(hit_genes_reverse)
-    stat_str += "\n     Percentage Hit Genes : {:.2f}".format(100*hit_genes_reverse/genes_w_ta)
+    stat_str += "\nNonzero Mean : {:.3f}".format(nonzero_mean)
+    stat_str += "\nVariance : {:.3f}".format(np.var(reverse_hist))
+    stat_str += "\nStandard Deviation : {:.3f}".format(np.std(reverse_hist))
+    stat_str += "\nHit TA Sites : {}".format(np.count_nonzero(reverse_hist))
+    stat_str += "\nPercentage Hit TA Sites : {:.2f}%".format(100*np.count_nonzero(reverse_hist)/total_ta_sites)
+    stat_str += "\nHit Gene TA Sites : {}".format(gene_ta_reverse)
+    stat_str += "\nPercentage Hit Gene TA Sites : {:.2f}%".format(100*gene_ta_reverse/gene_total_ta_sites)
+    stat_str += "\nHit Genes : {}".format(hit_genes_reverse)
+    stat_str += "\nPercentage Hit Genes : {:.2f}%".format(100*hit_genes_reverse/genes_w_ta)
 
     # Find top genes that cover % of all reads
     total = genehits[f"{read_name}_sum"].sum()
     temp = genehits.sort_values(by=f"{read_name}_sum", ascending=False).cumsum()
     for i in [0.1, 0.2, 0.5, 0.9, 0.95, 0.99, 0.999, 0.9999]:
         c =  (temp[f"{read_name}_sum"]<total*i).astype(bool).sum(axis=0)
-        stat_str += "\n   {:4.2f}% of reads accounted for by {:5.2f}% of genes ({})".format(i*100, 100*c/len(genehits), c)
+        stat_str += "\n{:4.2f}% of reads accounted for by {:5.2f}% of genes ({})".format(i*100, 100*c/len(genehits), c)
 
     print(stat_str)
 

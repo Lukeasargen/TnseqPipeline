@@ -89,14 +89,14 @@ do
     # Create TA map for the read to the index
     # This will also try to map to a combined TAmap if one exists
     echo " * Creating TAmap for ${i} and $INDEX...";
-    # python3 scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i};
+    python3 scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i};
 
 done
 
 echo "Finished processing the reads.";
 # Generate the next possible command
 
-cmd_str="python3 scripts/analysis.py --experiment $EXPERIMENT_NAME";
+cmd_str="python3 scripts/analysis.py --experiment $EXPERIMENT_NAME --index $INDEX";
 
 reads_dir=data/$EXPERIMENT_NAME/reads/
 
@@ -104,10 +104,8 @@ shopt -s extglob nullglob globstar
 reads=($reads_dir*.fastq)
 reads+=($reads_dir*.fq)
 
-cmd_str+=" --controls $(basename -- "${reads[0]}")";
-cmd_str+=" $(basename -- "${reads[1]}")";
-cmd_str+=" --samples $(basename -- "${reads[2]}")";
-cmd_str+=" $(basename -- "${reads[3]}")";
+cmd_str+=" --controls read_name";
+cmd_str+=" --samples read_name";
 
 printf "\nExample command for analysis:\n";
 echo "$cmd_str";
