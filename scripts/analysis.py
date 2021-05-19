@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 from util import tamap_to_genehits, gc_content
 from util import total_count_norm, quantile_norm, length_norm
+from zinb_glm import zinb_glm_llr_test
 
 
 def get_args():
@@ -22,9 +23,9 @@ def get_args():
 def col_stats(table, columns):
     for n in columns:
         print( "\nColumn Stats : {}".format(n) )
-        print( "Min= {:.4f}. Max= {:.4f}.".format(table[n].min(), table[n].max()) )
-        print( "Median= {:.4f}.".format(table[n].median()) )
-        print( "Mean= {:.4f}.".format(table[n].mean()) )
+        print( "Min={:.4f}. Max={:.4f}.".format(table[n].min(), table[n].max()) )
+        print( "Median={:.4f}.".format(table[n].median()) )
+        print( "Mean={:.3f}. nz mean={:.3f}".format(table[n].mean(), table[table[n]!=0][n].mean()) )
     print()
 
 
@@ -45,18 +46,21 @@ def pairwise_comparison(args):
     tamap_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.index)
     print(" * Loading TAmap : {}".format(tamap_filename))
     tamap = pd.read_csv(tamap_filename, delimiter=",")
+
+    # TODO : normalize the TAmap, TA counts are used in the ZINB model
+
+    # Compress the data into a genehits table
     genehits = tamap_to_genehits(tamap)
+
+    print(" * Normalizing...")
+    # genehits = length_norm(genehits, length="Gene_Length")
+    genehits = total_count_norm(genehits)
+    # genehits = quantile_norm(genehits, q=0.75)
 
     # Compute the gc content
     # print(" * Calculating GC content...")
     # fasta_filename = r"data/demo/references/14028s_chromosome.fasta"
     # genehits = gc_content(genehits, fasta_filename)
-
-    # Normalization here
-    print(" * Normalizing the Genehits...")
-    # genehits = length_norm(genehits, length="Gene_Length")
-    genehits = total_count_norm(genehits)
-    # genehits = quantile_norm(genehits, q=0.75)
 
     # Combine the replicates
     print(" * Combining replicates...")
@@ -70,6 +74,8 @@ def pairwise_comparison(args):
     # genehits = total_count_norm(genehits, columns=["Control_Hits", "Sample_Hits"])
 
     # Pairwise analysis below
+
+    # TODO : move this into the tamap_to_genehits
     print(" * Calculating insertion density per gene...")
     # Need remove intergenic and group by gene
     temp = tamap[tamap['Gene_ID'].notna()].copy()  # Remove intergenic
@@ -98,7 +104,7 @@ def pairwise_comparison(args):
     print("Threshold={}. {}({:.2f}%) Genes Removed. {} Genes Remaining.".format(min_count, len(removed), 100*len(removed)/len(genehits), len(trimmed)))
 
     # Save genes that are removed
-    removed_filename = "data/demo/analysis/removed.csv"
+    removed_filename = "data/{}/analysis/removed.csv".format(args.experiment)
     print(" * Saved removed genes to {}".format(removed_filename))
     removed.to_csv(removed_filename, header=True, index=False)
 
@@ -119,13 +125,27 @@ def pairwise_comparison(args):
     # TODO : statistical genehits here, get p-value
     print(" * Calculating statistical significance...")
     # data = np.array(trimmed[["Control_Hits", "Sample_Hits"]])
-    # params = zinb_fit(data)
-    # trimmed[["ZINB_Prob", "ZINB_Mean", "ZINB_Var"]] = params[:, 2:]
+    # conditions = [0, 1]
 
-    # print(trimmed.sort_values(by="ZINB_Mean", ascending=False))
+    data = np.array(trimmed[controls+samples])
+    conditions = [0]*len(controls) + [1]*len(samples)    
+    print("data.shape :", data.shape)
+    print("conditions :", conditions)
+
+    # pvalues = zinb_glm_llr_test(data, conditions)
+    # sig_bool = pvalues<0.05
+    # num_genes = len(pvalues)
+    # print("Genes :", num_genes)
+    # sig_genes = np.sum(sig_bool!=(pvalues==0))
+    # print("Significant genes : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/num_genes))
+    # print("Nan pvalues : {}".format(np.sum(np.isnan(pvalues))))
+    # print("Zero pvalues : {}".format(np.sum(pvalues==0)))
+    # trimmed[["P_Value"]] = pvalues
+    # trimmed[["log10"]] = -np.log10(pvalues)
+    # print(trimmed.sort_values(by="P_Value", ascending=False))
 
     # Save the comparison
-    pairwise_filename = "data/demo/analysis/pairwise.csv"
+    pairwise_filename = "data/{}/analysis/pairwise.csv".format(args.experiment)
     print(" * Saved pairwise analysis to {}".format(pairwise_filename))
     trimmed.to_csv(pairwise_filename, header=True, index=False)
 
@@ -138,24 +158,23 @@ def pairwise_comparison(args):
 
     # These are scatter plots for now
     combine_plots = [ # x, y suffix, s, xlog, ylog
-        ["Gene_Length", "Unique_Insertions", 2, True, False],
-        ["Gene_Length", "Diversity", 2, True, True],
-        ["Gene_Length", "Hits", 1, True, True],
-        ["TA_Count", "Unique_Insertions", 2, True, False],
-        ["TA_Count", "Hits", 1, True, True],
-        ["Start", "Diversity", 8, False, False],
-        ["Start", "Hits", None, False, False],
+        # ["Gene_Length", "Unique_Insertions", 2, True, False],
+        # ["Gene_Length", "Diversity", 2, True, False],
+        # ["Gene_Length", "Hits", 1, True, True],
+        # ["TA_Count", "Unique_Insertions", 2, True, False],
+        # ["TA_Count", "Hits", 1, True, True],
+        # ["Start", "Diversity", 8, False, False],
+        # ["Start", "Hits", None, False, False],
+        # ["GC", "Hits", 4, False, True],
     ]
     single_plots = [ # x, y, s, xlog, ylog
-        ["Gene_Length", "TA_Count", 2, True, True],
-        ["Start", "Log2FC", None, False, False],
-        ["Start", "LinearDiff", None, False, False],
-        ["Log2FC", "LinearDiff", None, False, False],
-        ["Control_Hits", "Sample_Hits", None, True, True],
+        # ["Gene_Length", "TA_Count", 2, True, True],
+        # ["Start", "Log2FC", None, False, False],
+        # ["Start", "LinearDiff", None, False, False],
+        # ["Log2FC", "LinearDiff", None, False, False],
+        # ["Control_Hits", "Sample_Hits", None, True, True],
+        # ["Log2FC", "log10", 1, False, False],
     ]
-
-    if 'GC' in genehits.columns:
-        combine_plots.append(["GC", "Hits", 4, False, True])
 
     for x, y, s, xlog, ylog in combine_plots:
         print("Plotting x={}. y={}.".format(x, y))
@@ -169,7 +188,7 @@ def pairwise_comparison(args):
         if ylog: ax.set_yscale('log')
         plt.legend()
         fig.tight_layout()
-        plt.savefig(f"data/demo/analysis/{x}_vs_{y}.png")
+        plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
 
     for x, y, s, xlog, ylog in single_plots:
         print("Plotting x={}. y={}.".format(x, y))
@@ -183,7 +202,7 @@ def pairwise_comparison(args):
         if xlog: ax.set_xscale('log')
         if ylog: ax.set_yscale('log')
         fig.tight_layout()
-        plt.savefig(f"data/demo/analysis/{x}_vs_{y}.png")
+        plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
 
 
     # Always make the MA plot
@@ -197,7 +216,7 @@ def pairwise_comparison(args):
     plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
     plt.ylabel("M = log2(sample) - log2(control)")
     fig.tight_layout()
-    plt.savefig("data/demo/analysis/MA_Plot.png")
+    plt.savefig(f"data/{args.experiment}/analysis/MA_Plot.png")
 
 
 if __name__ == "__main__":
