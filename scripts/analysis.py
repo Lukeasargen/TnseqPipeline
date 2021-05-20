@@ -4,29 +4,35 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from util import tamap_to_genehits, gc_content
-from util import total_count_norm, quantile_norm, length_norm
+from util import tamap_to_genehits, column_stats
+from util import total_count_norm, quantile_norm, gene_length_norm
 from zinb_glm import zinb_glm_llr_test
 
 
+# TODO : arg help message
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--index', type=str)
-    parser.add_argument('--controls', nargs='+', default=[], type=str)
-    parser.add_argument('--samples', nargs='+', default=[], type=str)
-    # parser.add_argument('--store_true', default=False, action='store_true')
+    parser.add_argument('--experiment', type=str, required=True)
+    parser.add_argument('--index', type=str, required=True)
+    parser.add_argument('--controls', nargs='+', default=[], type=str, required=True)
+    parser.add_argument('--samples', nargs='+', default=[], type=str, required=True)
+    parser.add_argument('--debug', default=False, action='store_true')
+    
+    # lowest number of hits per gene, removes zeros to eliminate log errors
+    parser.add_argument('--min_count', default=1, type=int)
+
+    # lowest amount of observed TA site with hits
+    parser.add_argument('--min_inserts', default=2, type=int)
+    
+    # smooth the ratio for small counts ratio=(sample+smoothing)/(control+smoothing)
+    parser.add_argument('--smoothing', default=1, type=float)
+
+    # calculates the GC content of each gene
+    parser.add_argument('--gc', default=False, action='store_true')
+
     args = parser.parse_args()
     return args
 
-
-def col_stats(table, columns):
-    for n in columns:
-        print( "\nColumn Stats : {}".format(n) )
-        print( "Min={:.4f}. Max={:.4f}.".format(table[n].min(), table[n].max()) )
-        print( "Median={:.4f}.".format(table[n].median()) )
-        print( "Mean={:.3f}. nz mean={:.3f}".format(table[n].mean(), table[table[n]!=0][n].mean()) )
-    print()
 
 
 def pairwise_comparison(args):
@@ -41,41 +47,34 @@ def pairwise_comparison(args):
     # Append "_sum" to match the column names in the TAmap and Genehits
     controls = [c+"_sum" for c in args.controls]
     samples = [c+"_sum" for c in args.samples]
+    test_columns = controls+samples
 
     # Load the tamap 
     tamap_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.index)
     print(" * Loading TAmap : {}".format(tamap_filename))
     tamap = pd.read_csv(tamap_filename, delimiter=",")
 
-    # TODO : normalize the TAmap, TA counts are used in the ZINB model
-
-    # Compress the data into a genehits table
-    genehits = tamap_to_genehits(tamap)
-
     print(" * Normalizing...")
-    # genehits = length_norm(genehits, length="Gene_Length")
-    genehits = total_count_norm(genehits)
-    # genehits = quantile_norm(genehits, q=0.75)
+    if args.debug: print("\nStats before norm:"); column_stats(tamap, columns=test_columns)
+    # tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
+    tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
+    # tamap = quantile_norm(tamap, q=0.75, columns=test_columns, debug=args.debug)
+    if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
 
-    # Compute the gc content
-    # print(" * Calculating GC content...")
-    # fasta_filename = r"data/demo/references/14028s_chromosome.fasta"
-    # genehits = gc_content(genehits, fasta_filename)
+    print(" * Compressing TAmap into Genehits table...")
+    fasta_filename = "data/{}/references/{}.fasta".format(args.experiment, args.index) if args.gc else None
+    if args.debug: print(f"GC content fasta filename : {fasta_filename}")
+    genehits = tamap_to_genehits(tamap, fasta_filename)
 
-    # Combine the replicates
+    # Combine the replicates, average the counts
     print(" * Combining replicates...")
-    # For now, simply mean the reads together
-    # Use mean in case there are different number of replicates for each condition
     genehits["Control_Hits"] = genehits[controls].mean(axis=1)
     genehits["Sample_Hits"] = genehits[samples].mean(axis=1)
-    col_stats(genehits, columns=["Control_Hits", "Sample_Hits"])
-
-    # TODO : renorm after combining replicates?
-    # genehits = total_count_norm(genehits, columns=["Control_Hits", "Sample_Hits"])
+    column_stats(genehits, columns=["Control_Hits", "Sample_Hits"])
 
     # Pairwise analysis below
 
-    # TODO : move this into the tamap_to_genehits
+    # TODO : can this be moved into tamap_to_genehits
     print(" * Calculating insertion density per gene...")
     # Need remove intergenic and group by gene
     temp = tamap[tamap['Gene_ID'].notna()].copy()  # Remove intergenic
@@ -92,16 +91,19 @@ def pairwise_comparison(args):
     # Don't need these anymore
     del temp
     del grouped
-    col_stats(genehits, columns=["Control_Diversity", "Sample_Diversity"])
+    column_stats(genehits, columns=["Control_Diversity", "Sample_Diversity"])
 
     # NOTE : Below starts the actual statistical analysis, everything above was just building the table
 
-    # Count thresholding
-    print(" * Trimming by minimum count...")
-    min_count = 0
-    trimmed = genehits[ (genehits[["Control_Hits","Sample_Hits"]] > min_count).all(axis=1) ].copy()
-    removed = genehits[ (genehits[["Control_Hits","Sample_Hits"]] <= min_count).any(axis=1) ].copy()
-    print("Threshold={}. {}({:.2f}%) Genes Removed. {} Genes Remaining.".format(min_count, len(removed), 100*len(removed)/len(genehits), len(trimmed)))
+    # Count and Observation thresholding
+    print(" * Trimming by minimum counts and unique insertions...")
+    keep = (genehits[["Control_Hits","Sample_Hits"]] >= args.min_count).all(axis=1) & (genehits[["Control_Unique_Insertions","Sample_Unique_Insertions"]] >= args.min_inserts).all(axis=1)
+    trimmed = genehits[keep].copy()
+    removed = genehits[~keep].copy()
+    print("Thresholds: min_count={}. min_inserts={}.".format(args.min_count, args.min_inserts))
+    print("{}({:.2f}%) Genes Removed. {} Genes Remaining.".format(len(removed), 100*len(removed)/len(genehits), len(trimmed)))
+
+    if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions"])
 
     # Save genes that are removed
     removed_filename = "data/{}/analysis/removed.csv".format(args.experiment)
@@ -111,23 +113,23 @@ def pairwise_comparison(args):
     # Ratio, Log2FC, LinearDiff
     print(" * Calculating fold change...")
     trimmed["Mean"] = (trimmed["Sample_Hits"] + trimmed["Control_Hits"]) / 2.0
-    smoothing = 0.0
-    trimmed["Ratio"] = (trimmed["Sample_Hits"] + smoothing) / (trimmed["Control_Hits"] + smoothing)
+    trimmed["Ratio"] = (trimmed["Sample_Hits"] + args.smoothing) / (trimmed["Control_Hits"] + args.smoothing)
     trimmed["Log2FC"] = np.log2(trimmed["Ratio"])
     trimmed["LinearDiff"] = trimmed["Sample_Hits"] - trimmed["Control_Hits"]
-    col_stats(trimmed, columns=["Log2FC", "LinearDiff"])
+    column_stats(trimmed, columns=["Log2FC"])
+
 
     # TODO : Fitness?
-    print(" * Calculating fitness...")
+    # print(" * Calculating fitness...")
     # trimmed["Sample_Fitness"] = np.log10( 1 + (trimmed["Sample_Hits"]*12e6/trimmed["Sample_Hits"].sum()) / (1000*trimmed["Gene_Length"]) )
-    trimmed["Sample_Fitness"] = np.log10( 1000*(1+trimmed["Sample_Hits"])/trimmed["Gene_Length"] )
+    # trimmed["Sample_Fitness"] = np.log10( 1000*(1+trimmed["Sample_Hits"])/trimmed["Gene_Length"] )
 
     # TODO : statistical genehits here, get p-value
     print(" * Calculating statistical significance...")
     # data = np.array(trimmed[["Control_Hits", "Sample_Hits"]])
     # conditions = [0, 1]
 
-    data = np.array(trimmed[controls+samples])
+    data = np.array(trimmed[test_columns])
     conditions = [0]*len(controls) + [1]*len(samples)    
     print("data.shape :", data.shape)
     print("conditions :", conditions)
@@ -158,26 +160,25 @@ def pairwise_comparison(args):
 
     # These are scatter plots for now
     combine_plots = [ # x, y suffix, s, xlog, ylog
-        # ["Gene_Length", "Unique_Insertions", 2, True, False],
-        # ["Gene_Length", "Diversity", 2, True, False],
-        # ["Gene_Length", "Hits", 1, True, True],
-        # ["TA_Count", "Unique_Insertions", 2, True, False],
-        # ["TA_Count", "Hits", 1, True, True],
-        # ["Start", "Diversity", 8, False, False],
-        # ["Start", "Hits", None, False, False],
-        # ["GC", "Hits", 4, False, True],
+        ["Gene_Length", "Diversity", 2, True, False],
+        ["Gene_Length", "Hits", 1, True, True],
+        ["Start", "Diversity", 8, False, False],
+        ["Start", "Hits", None, False, False],
     ]
     single_plots = [ # x, y, s, xlog, ylog
-        # ["Gene_Length", "TA_Count", 2, True, True],
-        # ["Start", "Log2FC", None, False, False],
-        # ["Start", "LinearDiff", None, False, False],
-        # ["Log2FC", "LinearDiff", None, False, False],
-        # ["Control_Hits", "Sample_Hits", None, True, True],
+        ["Gene_Length", "TA_Count", 2, True, True],
+        ["Start", "Log2FC", None, False, False],
+        ["Start", "LinearDiff", None, False, False],
+        ["Log2FC", "LinearDiff", None, False, False],
+        ["Control_Hits", "Sample_Hits", 4, True, True],
         # ["Log2FC", "log10", 1, False, False],
     ]
+    if args.gc:
+        combine_plots.append(["GC", "Hits", 4, False, True])
+        single_plots.append(["Start", "GC", None, False, False])
 
     for x, y, s, xlog, ylog in combine_plots:
-        print("Plotting x={}. y={}.".format(x, y))
+        print("Plotting x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
         ax.scatter(x=trimmed[x], y=trimmed[f"Control_{y}"], s=s, color="tab:green", label="Control")
@@ -191,7 +192,7 @@ def pairwise_comparison(args):
         plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
 
     for x, y, s, xlog, ylog in single_plots:
-        print("Plotting x={}. y={}.".format(x, y))
+        print("Plotting x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
         ax.scatter(x=trimmed[x], y=trimmed[y], s=s, color="tab:green")
