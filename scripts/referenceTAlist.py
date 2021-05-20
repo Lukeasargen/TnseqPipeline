@@ -2,10 +2,10 @@
 Creates the TA list from a genome sequence.
 Uses the genbank file to get names and tags for genes.
 """
-
 import os
 import re  # Get loci from string
 import argparse
+import shutil
 
 from util import read_fasta
 
@@ -31,6 +31,8 @@ def make_TAlist(args):
     output_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.output)
     merge_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.output)
     print("Output Location:", output_filename)
+    # THis file will have the names of genes with no TA sites
+    no_ta_filename = "data/{}/references/{}_noTA.txt".format(args.experiment, args.output)
 
     fullseq, geneome_name = read_fasta(fasta_filename, ret_name=True)
     print("Full Sequence Length =", len(fullseq))
@@ -52,6 +54,7 @@ def make_TAlist(args):
 
     # Output starts with headers
     output_array = ["Accession,Loci,Gene_ID,Locus_Tag,Start,End,Direction,TA_Site"]
+    no_ta_array = []
 
     # Here we get the gene feature idexes for the next for loop
     features_idxs = [idx for idx in range(len(unedited)) if unedited[idx].startswith("     gene")]
@@ -116,7 +119,12 @@ def make_TAlist(args):
             output_array.append(out)
             ta_idx += 1  # next site
 
+
         # Now the gene
+        # Check if there are no TA sites
+        if ta_sites[ta_idx] > gene_end:
+            no_ta_array.append(gene_id)
+
         # from gene_start to gene_end
         # use less than or equal bc the gene_end is part of the gene
         while ta_sites[ta_idx] <= gene_end:
@@ -142,6 +150,8 @@ def make_TAlist(args):
         if ta_idx >= len(ta_sites):
             break
 
+    print("Genes with no TA sites :", len(no_ta_array))
+
     # Save everything
     # This is the backup TA list
     with open(output_filename, "w") as filehandle:
@@ -153,8 +163,19 @@ def make_TAlist(args):
         for line in output_array:
             filehandle.writelines("%s\n" % line)
 
+    # These are the genes that don't have TA sites
+    with open(no_ta_filename, "w") as filehandle:
+        for line in no_ta_array:
+            filehandle.writelines("%s\n" % line)
 
     print(" * Saved TAlist to {}".format(output_filename))
+    print(" * Saved TAmap to {}".format(merge_filename))
+    print(" * Saved noTA to {}".format(no_ta_filename))
+
+    # Make a copy of the genome with the output name
+    ext = os.path.splitext(fasta_filename)[1]
+    dst_filename = "data/{}/references/{}{}".format(args.experiment, args.output, ext)
+    shutil.copy(fasta_filename, dst_filename)
 
 
 def main():
