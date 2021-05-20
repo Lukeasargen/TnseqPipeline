@@ -24,8 +24,8 @@ def make_TAlist(args):
     print(" * Creating a TAlist for {}.fasta and {}.gb".format(args.fasta, args.genbank))
 
     # We know these files exist if the bowtie step worked
-    fasta_filename = "data/{}/references/{}.fasta".format(args.experiment, args.fasta)
-    gb_filename = "data/{}/references/{}.gb".format(args.experiment, args.genbank)
+    fasta_filename = "data/{}/references/{}".format(args.experiment, args.fasta)
+    gb_filename = "data/{}/references/{}".format(args.experiment, args.genbank)
     
     # This is where the TAlist is output
     output_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.output)
