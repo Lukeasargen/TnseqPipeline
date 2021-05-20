@@ -81,7 +81,6 @@ do
     else
         # Run the bowtie alignment
         echo " * Begin Bowtie1 for ${i} and $INDEX...";
-        # TODO : Find the mismatch argument?
         # -m 1
         bowtie -t -v 3 -a --best --strata $index_str $trimmed_str $mapped_str;
     fi

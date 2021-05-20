@@ -8,7 +8,7 @@
 
 # Setup Workspace
 
-Open a terminal and chage directory to the location you want as your workspace. Run this command to clone this repository:
+Open a terminal and change directory to the location you want as your workspace. Run this command to clone this repository:
 
 ```
 git clone https://github.com/Lukeasargen/TnseqPipeline.git
@@ -66,7 +66,7 @@ Outputs:
 ./scripts/reference1.sh -e experiment -f fasta -g gb -o out
 
 # Bowtie 1
-./scripts/reference1.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c
+./scripts/reference1.sh -e demo -f 14028s_chromosome.fasta -g 14028s_genome.gb -o 14028c
 ```
 <!-- # Bowtie 2
 ./scripts/reference2.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c -->

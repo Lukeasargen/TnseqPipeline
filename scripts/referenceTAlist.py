@@ -2,7 +2,6 @@
 Creates the TA list from a genome sequence.
 Uses the genbank file to get names and tags for genes.
 """
-import os
 import re  # Get loci from string
 import argparse
 import shutil
@@ -173,8 +172,7 @@ def make_TAlist(args):
     print(" * Saved noTA to {}".format(no_ta_filename))
 
     # Make a copy of the genome with the output name
-    ext = os.path.splitext(fasta_filename)[1]
-    dst_filename = "data/{}/references/{}{}".format(args.experiment, args.output, ext)
+    dst_filename = "data/{}/references/{}.fasta".format(args.experiment, args.output)
     shutil.copy(fasta_filename, dst_filename)
 
 
