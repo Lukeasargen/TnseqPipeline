@@ -1,3 +1,4 @@
+import time
 import argparse
 
 import numpy as np
@@ -6,6 +7,8 @@ import matplotlib.pyplot as plt
 
 from util import tamap_to_genehits, column_stats
 from util import total_count_norm, quantile_norm, gene_length_norm
+from util import ttr_norm
+from util import time_to_string
 from zinb_glm import zinb_glm_llr_test
 
 
@@ -17,6 +20,7 @@ def get_args():
     parser.add_argument('--controls', nargs='+', default=[], type=str, required=True)
     parser.add_argument('--samples', nargs='+', default=[], type=str, required=True)
     parser.add_argument('--debug', default=False, action='store_true')
+    parser.add_argument('--plot', default=False, action='store_true')
     
     # lowest number of hits per gene, removes zeros to eliminate log errors
     parser.add_argument('--min_count', default=1, type=int)
@@ -57,9 +61,12 @@ def pairwise_comparison(args):
     print(" * Normalizing...")
     if args.debug: print("\nStats before norm:"); column_stats(tamap, columns=test_columns)
     # tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
-    tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
+    # tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
     # tamap = quantile_norm(tamap, q=0.75, columns=test_columns, debug=args.debug)
+    tamap = ttr_norm(tamap, trim=0.1, columns=test_columns, debug=args.debug)
     if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
+
+    # exit()
 
     print(" * Compressing TAmap into Genehits table...")
     fasta_filename = "data/{}/references/{}.fasta".format(args.experiment, args.index) if args.gc else None
@@ -118,33 +125,72 @@ def pairwise_comparison(args):
     trimmed["LinearDiff"] = trimmed["Sample_Hits"] - trimmed["Control_Hits"]
     column_stats(trimmed, columns=["Log2FC"])
 
+    # Possible Metrics
+    trimmed["Diversity_Ratio"] = (trimmed["Sample_Diversity"]) / (trimmed["Control_Diversity"])
+    trimmed["Log2_Diversity_Ratio"] = np.log2(trimmed["Diversity_Ratio"])
+    # print("TRIMMED diversity")
+    # column_stats(trimmed, columns=["Control_Diversity", "Sample_Diversity"])
+    # column_stats(trimmed, columns=["Diversity_Ratio", "Log2_Diversity_Ratio"])
+
 
     # TODO : Fitness?
     # print(" * Calculating fitness...")
     # trimmed["Sample_Fitness"] = np.log10( 1 + (trimmed["Sample_Hits"]*12e6/trimmed["Sample_Hits"].sum()) / (1000*trimmed["Gene_Length"]) )
     # trimmed["Sample_Fitness"] = np.log10( 1000*(1+trimmed["Sample_Hits"])/trimmed["Gene_Length"] )
 
-    # TODO : statistical genehits here, get p-value
+
     print(" * Calculating statistical significance...")
-    # data = np.array(trimmed[["Control_Hits", "Sample_Hits"]])
-    # conditions = [0, 1]
+    print("Stop early by pressing Ctrl+C in the terminal.")
+    t0 = time.time()  # Start time
+    trimmed["P_Value"] = np.nan
+    trimmed["P_Sig"] = False
+    c = 0  # genes counter, this is different than the index value
+    for i in trimmed.index:
+        try:
+            # Helpful time estimate
+            if (c+1) % 10 == 0:
+                duration = time.time()-t0
+                remaining = duration/(c+1) * (len(trimmed)-c+1)
+                print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c+1, len(trimmed), (c+1)/duration, time_to_string(duration), time_to_string(remaining)), end="\r")
+            c += 1
+            # # gene_name is used to index the full TAmap 
+            # # size is used to get the length of the condition array
+            gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
+            if args.debug: print("gene_name :", gene_name)
+            df = tamap[tamap['Gene_ID']==gene_name]
+            gene_data = np.array(df[test_columns]).T.reshape(-1)
+            conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
+            pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", debug=args.debug)
+            trimmed.loc[i, "P_Value"] = pvalue
+        except KeyboardInterrupt:
+            break
+    
+    print()  # ^time estimate ended with return character so this prints a newline
+    
+    trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<0.05, trimmed["P_Value"]!=0)
 
-    data = np.array(trimmed[test_columns])
-    conditions = [0]*len(controls) + [1]*len(samples)    
-    print("data.shape :", data.shape)
-    print("conditions :", conditions)
+    import statsmodels.stats.multitest
+    rejected, qvalues = statsmodels.stats.multitest.fdrcorrection(np.nan_to_num(trimmed["P_Value"]), alpha=0.05)
+    trimmed["Q_Value"] = qvalues
+    trimmed["Q_Sig"] = np.logical_and(qvalues<0.05, qvalues!=0)
 
-    # pvalues = zinb_glm_llr_test(data, conditions)
-    # sig_bool = pvalues<0.05
-    # num_genes = len(pvalues)
-    # print("Genes :", num_genes)
-    # sig_genes = np.sum(sig_bool!=(pvalues==0))
-    # print("Significant genes : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/num_genes))
-    # print("Nan pvalues : {}".format(np.sum(np.isnan(pvalues))))
-    # print("Zero pvalues : {}".format(np.sum(pvalues==0)))
-    # trimmed[["P_Value"]] = pvalues
-    # trimmed[["log10"]] = -np.log10(pvalues)
+    sig_genes = trimmed["P_Sig"].sum()
+    print("Significant p-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
+    print("Nan pvalues : {}".format(np.sum(np.isnan(trimmed["P_Value"]))))
+    print("Zero pvalues : {}".format(np.sum(trimmed["P_Value"]==0)))
+    sig_genes = trimmed["Q_Sig"].sum()
+    print("Significant q-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
+    print("Zero qvalues : {}".format(np.sum(trimmed["Q_Value"]==0)))
+
+
+    trimmed["Log10Q"] = -np.log10(trimmed[trimmed["Q_Value"]>1e-4]["Q_Value"])
+    trimmed["Log10P"] = -np.log10(trimmed[trimmed["P_Value"]>1e-4]["P_Value"])
     # print(trimmed.sort_values(by="P_Value", ascending=False))
+
+
+    # TODO : create booleans for filtering against the metrics
+    # abs(log2fc) > 1, pvalue<0.05, qvalue<0.05
+
 
     # Save the comparison
     pairwise_filename = "data/{}/analysis/pairwise.csv".format(args.experiment)
@@ -155,9 +201,6 @@ def pairwise_comparison(args):
     # exit()
 
     # Plotting below
-    print(" * Calculating generating plots...")
-    print("Stop plotting by pressing Ctrl+C in the terminal.")
-
     # These are scatter plots for now
     combine_plots = [ # x, y suffix, s, xlog, ylog
         ["Gene_Length", "Diversity", 2, True, False],
@@ -167,43 +210,47 @@ def pairwise_comparison(args):
     ]
     single_plots = [ # x, y, s, xlog, ylog
         ["Gene_Length", "TA_Count", 2, True, True],
+        ["Control_Hits", "Sample_Hits", 4, True, True],
         ["Start", "Log2FC", None, False, False],
         ["Start", "LinearDiff", None, False, False],
         ["Log2FC", "LinearDiff", None, False, False],
-        ["Control_Hits", "Sample_Hits", 4, True, True],
-        # ["Log2FC", "log10", 1, False, False],
+        ["Log2FC", "Log2_Diversity_Ratio", None, False, False],
+        ["Log2FC", "Log10P", 8, False, False],
+        ["Log2FC", "Log10Q", 8, False, False],
     ]
     if args.gc:
         combine_plots.append(["GC", "Hits", 4, False, True])
         single_plots.append(["Start", "GC", None, False, False])
 
-    for x, y, s, xlog, ylog in combine_plots:
-        print("Plotting x={} y={}".format(x, y))
-        fig = plt.figure(figsize=[16, 8])
-        ax = fig.add_subplot(111)
-        ax.scatter(x=trimmed[x], y=trimmed[f"Control_{y}"], s=s, color="tab:green", label="Control")
-        ax.scatter(x=trimmed[x], y=trimmed[f"Sample_{y}"], s=s, color="tab:red", label="Sample")
-        ax.set_xlabel(x)
-        ax.set_ylabel(y)
-        if xlog: ax.set_xscale('log')
-        if ylog: ax.set_yscale('log')
-        plt.legend()
-        fig.tight_layout()
-        plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
+    if args.plot:
+        print(" * Calculating generating plots...")
+        for x, y, s, xlog, ylog in combine_plots:
+            print("Plotting x={} y={}".format(x, y))
+            fig = plt.figure(figsize=[16, 8])
+            ax = fig.add_subplot(111)
+            ax.scatter(x=trimmed[x], y=trimmed[f"Control_{y}"], s=s, color="tab:green", label="Control")
+            ax.scatter(x=trimmed[x], y=trimmed[f"Sample_{y}"], s=s, color="tab:red", label="Sample")
+            ax.set_xlabel(x)
+            ax.set_ylabel(y)
+            if xlog: ax.set_xscale('log')
+            if ylog: ax.set_yscale('log')
+            plt.legend()
+            fig.tight_layout()
+            plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
 
-    for x, y, s, xlog, ylog in single_plots:
-        print("Plotting x={} y={}".format(x, y))
-        fig = plt.figure(figsize=[16, 8])
-        ax = fig.add_subplot(111)
-        ax.scatter(x=trimmed[x], y=trimmed[y], s=s, color="tab:green")
-        # plt.hlines(trimmed[y].median(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:red", label="Median={:.2f}".format(trimmed[y].median()))
-        # plt.hlines(trimmed[y].mean(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:blue", label="Mean={:.2f}".format(trimmed[y].mean()))
-        ax.set_xlabel(x)
-        ax.set_ylabel(y)
-        if xlog: ax.set_xscale('log')
-        if ylog: ax.set_yscale('log')
-        fig.tight_layout()
-        plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
+        for x, y, s, xlog, ylog in single_plots:
+            print("Plotting x={} y={}".format(x, y))
+            fig = plt.figure(figsize=[16, 8])
+            ax = fig.add_subplot(111)
+            ax.scatter(x=trimmed[x], y=trimmed[y], s=s, color="tab:green")
+            # plt.hlines(trimmed[y].median(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:red", label="Median={:.2f}".format(trimmed[y].median()))
+            # plt.hlines(trimmed[y].mean(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:blue", label="Mean={:.2f}".format(trimmed[y].mean()))
+            ax.set_xlabel(x)
+            ax.set_ylabel(y)
+            if xlog: ax.set_xscale('log')
+            if ylog: ax.set_yscale('log')
+            fig.tight_layout()
+            plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
 
 
     # Always make the MA plot

@@ -108,12 +108,11 @@ chi-squared percentile (choosen by us, the analyst) for
 the given degrees of freedom.
 
 """
-
 import time
 
 import numpy as np
-import scipy.optimize  # minimize
-import scipy.stats  # negative binomial
+from scipy.optimize import minimize
+from  scipy.stats import nbinom, norm, chi2
 
 # import warnings
 # warnings.filterwarnings("ignore")
@@ -135,7 +134,7 @@ def design_matrix(conditions):
     return Xg
 
 
-def nll_glm(params, y, conditions):
+def nll_glm(params, y, conditions, dist="nb"):
     """ Negative log-likelihood of the ZINB-GLM model """
     pg = params[0]
     ag, yg = np.split(params[1:], 2)
@@ -154,20 +153,33 @@ def nll_glm(params, y, conditions):
     # print("n={:.60f}".format(n))
     # print("p, mu, ag :", p, mu, ag)
     # ZINB (Equation 2)
-    n_reads = pi[y==0] + (1.0-pi[y==0])*scipy.stats.nbinom.pmf(n_reads, n, p[y==0])
-    y_reads = (1.0-pi[y>0])*scipy.stats.nbinom.pmf(y_reads, n, p[y>0])
+
+    if dist=="nb":
+        # Negative Binomial
+        n_reads = pi[y==0] + (1.0-pi[y==0])*nbinom.pmf(n_reads, n, p[y==0])
+        y_reads = (1.0-pi[y>0])*nbinom.pmf(y_reads, n, p[y>0])
+    elif dist=="norm":
+        # Normal
+        # "Normal Approximation to the Negative Binomial" by statisticsmatt
+        # https://www.youtube.com/watch?v=JhmmbgLLVkQ
+        var = n*(1-p)/(p*p)
+        sd = np.sqrt(var)
+        n_reads = pi[y==0] + (1.0-pi[y==0])*norm.pdf(n_reads, mu[y==0], sd[y==0])
+        y_reads = (1.0-pi[y>0])*norm.pdf(y_reads, mu[y>0], sd[y>0])
+
     # Compute the negative log-likelihood
     """ https://stackoverflow.com/questions/5124376/convert-nan-value-to-zero/5124409 """ 
     # The stackoverflow answer was ok, but sometimes values are still 0
-    # I added machine epsilon and everything seems to work better.
-    n_reads = np.nan_to_num(np.log(n_reads+np.finfo(float).eps))
-    y_reads = np.nan_to_num(np.log(y_reads+np.finfo(float).eps))
+    # I added a little epsilon and everything seems to work better.
+    eps = 1e-25
+    n_reads = np.nan_to_num(np.log(n_reads + eps))
+    y_reads = np.nan_to_num(np.log(y_reads + eps))
     nll = -(np.sum(n_reads) + np.sum(y_reads))
     # print("{:.50f}".format(nll))
     return nll
 
 
-def glm_fit(data, conditions, debug=False):
+def glm_fit(data, conditions, dist="nb", debug=False):
     """ Fits a single gene to a ZINB distribution.
         There are some hard-code initial values in this function.
     """
@@ -190,7 +202,7 @@ def glm_fit(data, conditions, debug=False):
     upper_sigmoid = np.log(y/(1-y))  # highest value of sigmoid
     #          n>0               pi(sigmoid)                 mu(exp)
     bounds = [(eps, upper_n)] + k*[(None, upper_sigmoid)] + k*[(None, upper_exp)]
-    results = scipy.optimize.minimize(nll_glm, params, args=(data, conditions), bounds=bounds)
+    results = minimize(nll_glm, params, args=(data, conditions, dist), bounds=bounds)
     # Unpack the paramters and copmute the estimated distribution parameters
     params = results.x
     pg = params[0]
@@ -201,20 +213,38 @@ def glm_fit(data, conditions, debug=False):
     p = n/(mu+n)  # From the paper
     var = n*(1-p)/(p*p)  # From scipy docs
     if debug:
-        print("data :", data); print("cond :", conditions)
         print("pi :", pi); print("n :", n)
         print("p :", p); print("mu :", mu); print("var :", var)
     return params
-   
 
-def zinb_glm_llr_test(data, conditions, debug=False):
-    """ Fit ZINB-GLM to all genes """
-    # These are the same for all genes
+
+def zinb_glm_llr_test(data, conditions, dist, debug=False):
+    """ Compute the Likelihood ratio test on the ZINB-GLM model """
     conditions1 = np.array(conditions)
     conditions0 = [0]*len(conditions1)
+    if debug: print("data :", data); print("cond :", conditions)
     # Difference in parameters is the degrees of freedom
     # 1 dispersion, mu and pi for all conditions, minus the 3 for the condition-indepented model
     delta_df = 1 + 2*num_conditions(conditions) - 3
+    params0 = glm_fit(data, conditions0, dist, debug=debug)  # Null Hypothesis
+    params1 = glm_fit(data, conditions1, dist, debug=debug)  # Alternative Hypothesis
+    # Compute the log-likelihood
+    l0 = nll_glm(params0, data, conditions0, dist)
+    l1 = nll_glm(params1, data, conditions1, dist)
+    # Compute log-likelihood ratio
+    llr = 2*(l0-l1)
+    # llr is approximately chi-squared
+    # pvalue is the probability that we get this llr or higher for the given degrees of freedom
+    pvalue = chi2.pdf(x=llr, df=delta_df)
+    if debug:
+        print("mean={:.2f}. non-zero mean={:.2f}".format(data.mean(), data[data>0].mean()))
+        print("l0={:.3f}. l1={:.3f}. llr={:.3f}. ".format(l0, l1, llr))
+        print("df={}. pvalue={:.8f}\n".format(delta_df, pvalue))
+    return pvalue
+
+
+def zinb_glm_llr_full_test(data, conditions, debug=False):
+    """ Do the Likelihood Ratio Test on the ZINB-GLM for each gene. """
     # Iterate over every row, length of first axis of data
     num_genes = len(data)
     # Temporary array to fill
@@ -231,38 +261,27 @@ def zinb_glm_llr_test(data, conditions, debug=False):
 
         row_data = data[i]  # Select a single gene data
 
+        # TODO : remove data less than 2 observations
         # Skip if all values are the same, which includes all zero counts
         if np.all(row_data == row_data[0]):
             pvalues[i,:] = np.nan
             continue
+        
+        if debug:
+            print("mean :", np.mean(data))
+            print("nzmean :", np.mean(data[data>0]))
 
         # Here is the likelihood ratio test (LRT)
-        params0 = glm_fit(row_data, conditions0, debug=debug)  # Null Hypothesis
-        params1 = glm_fit(row_data, conditions1, debug=debug)  # Alternative Hypothesis
-        # Compute the log-likelihood
-        l0 = nll_glm(params0, row_data, conditions0)
-        l1 = nll_glm(params1, row_data, conditions1)
-        # Compute log-likelihood ratio
-        llr = 2*(l0-l1)
+        pvalue = zinb_glm_llr_test(row_data, conditions, dist="nb", debug=debug)
+        pvalue = zinb_glm_llr_test(row_data, conditions, dist="norm", debug=debug)
 
-        # This means there was an error while optimizing
-        # For now, scipy returns 0
-        # if llr <= 0:
-        #     pvalues[i,:] = np.nan
-        #     continue
+        # TODO : check for errors in llr and pvalue
 
-        # llr is approximately chi-squared
-        # pvalue is the probability that we get this llr or higher for the given degrees of freedom
-        pvalue = scipy.stats.chi2.pdf(x=llr, df=delta_df)
         # Sort the pvalue in the array
         pvalues[i,:] = pvalue
 
-        if debug:
-            print("l0={:.3f}. l1={:.3f}. llr={:.3f}. ".format(l0, l1, llr))
-            print("df={}. pvalue={:.8f}\n".format(delta_df, pvalue))
-
         # leave early for debugging
-        if i > 100:
+        if i > 100 and debug:
             break
 
     return pvalues
@@ -271,31 +290,39 @@ def zinb_glm_llr_test(data, conditions, debug=False):
 if __name__ == "__main__":
 
     debug = True
-    conditions = [0, 0, 1, 1]
+    ta_sites = 2
+    saturation = 1.0
+    conditions = [0]*ta_sites + [1]*ta_sites
     # print(design_matrix(conditions))
 
-    num_genes = 5
+    num_genes = 2
     min_count = 0
-    max_count = 100
+    max_count = 10
+    factor = 100
     sig = 0.05
 
     data = np.random.randint(min_count, max_count, size=(num_genes, len(conditions)))
-    data = data*10 + 10
+    data += np.random.randint(min_count, factor*max_count, size=(num_genes, len(conditions)))
+    # Mask based on an approximate array saturation
+    mask = np.random.choice([0, 1], size=(num_genes, len(conditions)), p=[1-saturation, saturation])
+    data = mask*data
+    data = data + data*conditions*1.0
+
+    # conditions = [0, 0, 1, 1]
     # data = np.array( [
-    #     [11400, 11200],
-    #     [142100, 142200],
-    #     [102400, 108200],
-    #     [0, 0],
+    #     # [11400, 11200],
+    #     # [142100, 142200],
+    #     # [102400, 108200],
+    #     # [0, 0],
+    #     [200, 250, 300, 350],
+    #     [2000, 2500, 3000, 3500],
+    #     [20000, 25000, 30000, 35000],
     # ] )
 
-    pvalues = zinb_glm_llr_test(data, conditions, debug=debug)
+    pvalues = zinb_glm_llr_full_test(data, conditions, debug=debug)
     pvalues = np.squeeze(pvalues)
 
     sig_bool = pvalues<sig
-    # print("pvalues :", pvalues)
-    # print("sig pvals :", pvalues[sig_bool])
-    # print("sig data :", data[sig_bool])
-    # print("nan data :", data[np.isnan(pvalues)])
 
     for i in range(len(data)):
         print(data[i], sig_bool[i], pvalues[i])
@@ -307,18 +334,14 @@ if __name__ == "__main__":
     print("Zero pvalues : {}".format(np.sum(pvalues==0)))
 
 
-    mask = np.isfinite(pvalues)
-    print("mask :", mask)
-    qvals = np.full(pvalues.shape, np.nan)
-    print("qvals :", qvals)
+    mask = np.isfinite(pvalues)  # update these qvals
+    qvalues = np.full(pvalues.shape, np.nan)
 
     import statsmodels.stats.multitest
     rejected, qvalues = statsmodels.stats.multitest.fdrcorrection(pvalues, alpha=0.05)
 
-    print(pvalues)
-    print(sig_bool)
-    print(qvalues)
-    print(rejected)
-
-
+    print("pvalues :", pvalues)
+    print("sig p:", sig_bool)
+    print("qvalues :", qvalues)
+    print("sig q:", rejected)
 
