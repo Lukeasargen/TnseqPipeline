@@ -1,7 +1,13 @@
 import numpy as np
-
+from scipy.stats import trim_mean
 
 genehits_nonread_headers = 7
+
+
+def time_to_string(t):
+    if t > 3600: return "{:.2f} hours".format(t/3600)
+    if t > 60: return "{:.2f} minutes".format(t/60)
+    else: return "{:.2f} seconds".format(t)
 
 
 def column_stats(table, columns):
@@ -61,7 +67,7 @@ def tamap_to_genehits(tamap, fasta_filename=None):
 """ Normalization Operations """
 
 def total_count_norm(genehits, columns=None, debug=False):
-    """ Normalize tamap using the total reads."""
+    """ Normalize genehits using the total reads. """
     temp = genehits.copy()
     if columns==None:
         columns = temp.columns[genehits_nonread_headers:]
@@ -81,7 +87,7 @@ def total_count_norm(genehits, columns=None, debug=False):
 
 
 def quantile_norm(genehits, q=0.5, columns=None, debug=False):
-    """ Normalize tamap using the q'th quantile of the non-zero values."""
+    """ Normalize genehits using the q'th quantile of the non-zero values."""
     temp = genehits.copy()
     if columns==None:
         columns = temp.columns[genehits_nonread_headers:]
@@ -91,9 +97,34 @@ def quantile_norm(genehits, q=0.5, columns=None, debug=False):
     max_total = max(multiply_factor.values())
     multiply_factor = {k:max_total/v for k,v in multiply_factor.items()}
     for k,v in multiply_factor.items():
-        temp[k] = (max_total/v)*temp[k]
+        temp[k] = v*temp[k]
     if debug:
         print("\nquantile_norm q={}".format(q))
+        print("max_total :", max_total)
+        print("columns :", columns)
+        print("multiply_factor :", multiply_factor)
+    return temp
+
+
+def ttr_norm(genehits, trim=0.05, columns=None, debug=False):
+    """ Normalize genehits using the .
+        Assumes most genes are not differentially expressed.
+        Does not consider gene length or library size.
+    """
+    temp = genehits.copy()
+    if columns==None:
+        columns = temp.columns[genehits_nonread_headers:]
+    multiply_factor = {}
+    for name in columns:
+        a = np.mean(temp[name][temp[name]>0], axis=0)
+        b = trim_mean(temp[name][temp[name]>0], trim)
+        multiply_factor.update({name: a*b})
+    max_total = max(multiply_factor.values())
+    multiply_factor = {k:max_total/v for k,v in multiply_factor.items()}
+    for k,v in multiply_factor.items():
+        temp[k] = v*temp[k]
+    if debug:
+        print("\nttr_norm trim={}".format(trim))
         print("max_total :", max_total)
         print("columns :", columns)
         print("multiply_factor :", multiply_factor)
