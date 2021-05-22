@@ -71,7 +71,7 @@ do
         # CROP: Cut the read to a specified length by removing bases from the end
         # LEADING:20 TRAILING:20 MINLEN:48 CROP:20
 
-        # Important: MINLEN:48 REMOVES READS WITH 2 BAD BP AT EITHER LEADING OR TRAILING
+        # Important: MINLEN:48 REMOVES READS WITH 2 BAD BP TRAILING
         java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str TRAILING:20 MINLEN:48 CROP:20;
     fi
 

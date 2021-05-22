@@ -99,16 +99,78 @@ Outputs:
 
 The `reads#.sh` scripts are most useful if you want to use default settings for trimming and aligning. If you need to change these parameters, this is the breakdown of each process called in the read scripts.
 
-## 1. Trim and Crop
+## 1. Trim and Crop - Trimmomatic
 
-## 2. Align
+```
+java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 data/$EXPERIMENT_NAME/reads/${READ_NAME}.fastq data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed ILLUMINACLIP:data/$EXPERIMENT_NAME/adapters/${ADPATER_NAME}:2:30:10 TRAILING:20 MINLEN:48 CROP:20
+```
 
-## 3. Map
+The best way to understand these arguments is to read the manual: http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/TrimmomaticManual_V0.32.pdf
+
+TRAILING and MINLEN are dependent on the experiment. From the manual:
+- TRAILING: Cut bases off the end of a read, if below a threshold quality
+- MINLEN: Drop the read if it is below a specified length
+- CROP: Cut the read to a specified length by removing bases from the end
+
+These defaults were chosen to work with 50bp reads from an Illumina MiSeq System. The combination of the TRAILING and MINLEN removes all reads that end with more than 2 low quality bases. Even with this strict threshold, only around 5% of reads are dropped. Then the reads are cropped to 20 bp because bowtie works well with short reads (usually 5-18% of alignments fail).
 
 
+## 2. Align - Bowtie
+
+```
+bowtie -t -v 3 -a --best --strata data/$EXPERIMENT_NAME/indexes/$INDEX data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed_mapped
+```
+
+The bowtie manual is a longer read http://bowtie-bio.sourceforge.net/manual.shtml
+
+Here are the default arguments used:
+
+|||
+|-|-|
+| -t | Prints the duration of the alignment |
+| -v 3 | v mode alignments only check mismatches and ignores quality. There will be at most 3 mismatches. |
+| -a | Report all alignments. |
+| --best --strata | Best reports in best-to-worst order. Strata reports reads with the least number mismatches. |
+
+## 3. Map - Python
+
+```
+python3 scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${READ_NAME}
+```
+This script is documented in place. Nearly every line has a comment explaining what it does.
 
 # Stage 3 - Analysis
 
+For now, `analysis.py` only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization. Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
+
+There are several arguments. Below are examples of each argument.
+
 ```
-python3 scripts/analysis.py --experiment demo --controls c25k c50k --samples s25k s50k
+# Help message
+python3 scripts/analysis.py -h
+
+# Single reads
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k
+
+# Biological replicates
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c25k c50k --samples s25k s50k
+
+# --plot = Create plots of some metrics
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --plot
+
+# --gc = Calculates the GC content of each gene 
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --gc
+
+# --min_count = only use genes that have more counts than this (default=1)
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --min_count=1
+
+# --min_inserts = only use genes that have more insertion sites than this (default=2)
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --min_inserts=2
+
+# --smoothing = smooths the ratio for small counts (default=1)
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --smoothing=1
+
+# You can combine the arguments
+# Control replicates, GC content, minimum of 10 hits per gene, plot
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c25k c50k --samples s50k --gc --min_count=10 --plot
 ```

@@ -123,6 +123,7 @@ def pairwise_comparison(args):
     trimmed["Mean"] = (trimmed["Sample_Hits"] + trimmed["Control_Hits"]) / 2.0
     trimmed["Ratio"] = (trimmed["Sample_Hits"] + args.smoothing) / (trimmed["Control_Hits"] + args.smoothing)
     trimmed["Log2FC"] = np.log2(trimmed["Ratio"])
+    trimmed["Log_Sig"] = np.abs(trimmed["Log2FC"]) > 1
     trimmed["LinearDiff"] = trimmed["Sample_Hits"] - trimmed["Control_Hits"]
     column_stats(trimmed, columns=["Log2FC"])
 
@@ -185,9 +186,6 @@ def pairwise_comparison(args):
     trimmed["Log10P"] = -np.log10(trimmed[trimmed["P_Value"]>cutoff]["P_Value"])
     # print(trimmed.sort_values(by="P_Value", ascending=False))
 
-    # TODO : create booleans for filtering against the metrics
-    # abs(log2fc) > 1, pvalue<0.05, qvalue<0.05
-
     # Save the comparison
     pairwise_filename = "data/{}/analysis/pairwise.csv".format(args.experiment)
     print(" * Saved pairwise analysis to {}".format(pairwise_filename))
@@ -202,7 +200,7 @@ def pairwise_comparison(args):
         ["Gene_Length", "Diversity", 2, True, False],
         ["Gene_Length", "Hits", 1, True, True],
         ["Start", "Diversity", 8, False, False],
-        ["Start", "Hits", None, False, False],
+        ["Start", "Hits", None, False, True],
     ]
     single_plots = [ # x, y, s, xlog, ylog
         ["Gene_Length", "TA_Count", 2, True, True],
@@ -253,7 +251,8 @@ def pairwise_comparison(args):
     fig = plt.figure(figsize=[12, 8])
     A = 0.5 * ( np.log2(trimmed["Sample_Hits"]) + np.log2(trimmed["Control_Hits"]) )
     M = trimmed["Log2FC"]
-    plt.scatter(x=A, y=M, s=10, color="tab:green")
+    colors = {False:'tab:green', True:'tab:red'}
+    plt.scatter(x=A, y=M, s=10, color=trimmed["P_Sig"].map(colors))
     plt.hlines(M.median(), xmin=A.min(), xmax=A.max(), color="tab:red", label="Median={:.2f}".format(M.median()))
     plt.hlines(M.mean(), xmin=A.min(), xmax=A.max(), color="tab:blue", label="Mean={:.2f}".format(M.mean()))
     plt.legend()
