@@ -8,7 +8,9 @@ import matplotlib.pyplot as plt
 from util import tamap_to_genehits, column_stats
 from util import total_count_norm, quantile_norm, gene_length_norm
 from util import ttr_norm
+from util import bh_procedure
 from util import time_to_string
+
 from zinb_glm import zinb_glm_llr_test
 
 
@@ -168,11 +170,8 @@ def pairwise_comparison(args):
     print()  # ^time estimate ended with return character so this prints a newline
     
     trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<0.05, trimmed["P_Value"]!=0)
-
-    import statsmodels.stats.multitest
-    rejected, qvalues = statsmodels.stats.multitest.fdrcorrection(np.nan_to_num(trimmed["P_Value"]), alpha=0.05)
-    trimmed["Q_Value"] = qvalues
-    trimmed["Q_Sig"] = np.logical_and(qvalues<0.05, qvalues!=0)
+    trimmed["Q_Value"] = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
+    trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<0.05, trimmed["Q_Value"]!=0)
 
     sig_genes = trimmed["P_Sig"].sum()
     print("Significant p-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
@@ -182,15 +181,13 @@ def pairwise_comparison(args):
     print("Significant q-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
     print("Zero qvalues : {}".format(np.sum(trimmed["Q_Value"]==0)))
 
-
-    trimmed["Log10Q"] = -np.log10(trimmed[trimmed["Q_Value"]>1e-4]["Q_Value"])
-    trimmed["Log10P"] = -np.log10(trimmed[trimmed["P_Value"]>1e-4]["P_Value"])
+    cutoff = 1e-4
+    trimmed["Log10Q"] = -np.log10(trimmed[trimmed["Q_Value"]>cutoff]["Q_Value"])
+    trimmed["Log10P"] = -np.log10(trimmed[trimmed["P_Value"]>cutoff]["P_Value"])
     # print(trimmed.sort_values(by="P_Value", ascending=False))
-
 
     # TODO : create booleans for filtering against the metrics
     # abs(log2fc) > 1, pvalue<0.05, qvalue<0.05
-
 
     # Save the comparison
     pairwise_filename = "data/{}/analysis/pairwise.csv".format(args.experiment)

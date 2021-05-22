@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.stats import trim_mean
 
+
 genehits_nonread_headers = 7
 
 
@@ -145,4 +146,35 @@ def gene_length_norm(genehits, columns=None, debug=False):
         print("\ngene_length_norm")
         print("norm_length :", norm_length)
     return temp
+
+
+""" Stats Functions """
+
+def bh_procedure(pvalues):
+    """ Benjamini-Hochberg Procedure.
+        Formula from this video:
+            "False Discovery Rates, FDR, clearly explained"
+            by StatQuest with Josh Starmer
+            https://www.youtube.com/watch?v=K8LQSvtjcEo
+    """
+    pvalues = np.array(pvalues)
+    m = len(pvalues)
+
+    # First step is to sort the pvalues
+    sort_idx = np.argsort(pvalues)
+    qvalues = np.take(pvalues, sort_idx)
+
+    # Then step through the list from largest to smallest
+    # Largest qvalue is the same, so use m-1
+    # The rest is a simple formula that takes the minimum
+    for i in reversed(range(m-1)):
+        new_q = qvalues[i] * m/(i+1)
+        qvalues[i] = min(new_q, qvalues[i+1])
+
+    # Double argsort trick. https://www.berkayantmen.com/rank.html
+    out = np.empty_like(qvalues)
+    out[sort_idx] = qvalues
+    # unsort_idx = np.argsort(sort_idx)
+    # qvalues = np.take(qvalues, unsort_idx)
+    return out
 
