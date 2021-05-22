@@ -14,31 +14,30 @@ from util import time_to_string
 from zinb_glm import zinb_glm_llr_test
 
 
-# TODO : arg help message
 def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--experiment', type=str, required=True)
-    parser.add_argument('--index', type=str, required=True)
-    parser.add_argument('--controls', nargs='+', default=[], type=str, required=True)
-    parser.add_argument('--samples', nargs='+', default=[], type=str, required=True)
-    parser.add_argument('--debug', default=False, action='store_true')
-    parser.add_argument('--plot', default=False, action='store_true')
-    
-    # lowest number of hits per gene, removes zeros to eliminate log errors
-    parser.add_argument('--min_count', default=1, type=int)
-
-    # lowest amount of observed TA site with hits
-    parser.add_argument('--min_inserts', default=2, type=int)
-    
-    # smooth the ratio for small counts ratio=(sample+smoothing)/(control+smoothing)
-    parser.add_argument('--smoothing', default=1, type=float)
-
-    # calculates the GC content of each gene
-    parser.add_argument('--gc', default=False, action='store_true')
-
+    parser = argparse.ArgumentParser(description="Pairwise Comparison (Supports Replicates).")
+    parser.add_argument('--experiment', type=str, required=True,
+        help="Experiment folder name.")
+    parser.add_argument('--index', type=str, required=True,
+        help="Index name.")
+    parser.add_argument('--controls', nargs='+', default=[], type=str, required=True,
+        help="List read names without the filetype and separated by a space.")
+    parser.add_argument('--samples', nargs='+', default=[], type=str, required=True,
+        help="List read names without the filetype and separated by a space.")
+    parser.add_argument('--debug', default=False, action='store_true',
+        help="Boolean flag that outputs debugging messages. default=False.")
+    parser.add_argument('--plot', default=False, action='store_true',
+        help="Boolean flag that automatically makes a few plots of the data. default=False.")
+    parser.add_argument('--min_count', default=1, type=int,
+        help="Lowest number of hits per gene. Removes zeros to eliminate log errors. default=1.")
+    parser.add_argument('--min_inserts', default=2, type=int,
+        help="Lowest amount of observed TA sites with hits. default=1.")
+    parser.add_argument('--smoothing', default=1, type=float,
+        help="Smooth the ratio for small counts. ratio=(sample+smoothing)/(control+smoothing). default=1.")
+    parser.add_argument('--gc', default=False, action='store_true',
+        help="Boolean flag that calculates the GC content of each gene. default=False.")
     args = parser.parse_args()
     return args
-
 
 
 def pairwise_comparison(args):
