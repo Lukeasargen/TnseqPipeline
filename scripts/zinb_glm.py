@@ -218,7 +218,7 @@ def glm_fit(data, conditions, dist="nb", debug=False):
     return params
 
 
-def zinb_glm_llr_test(data, conditions, dist, debug=False):
+def zinb_glm_llr_test(data, conditions, dist="nb", debug=False):
     """ Compute the Likelihood ratio test on the ZINB-GLM model """
     conditions1 = np.array(conditions)
     conditions0 = [0]*len(conditions1)
@@ -237,7 +237,7 @@ def zinb_glm_llr_test(data, conditions, dist, debug=False):
     # pvalue is the probability that we get this llr or higher for the given degrees of freedom
     pvalue = chi2.pdf(x=llr, df=delta_df)
     if debug:
-        print("mean={:.2f}. non-zero mean={:.2f}".format(data.mean(), data[data>0].mean()))
+        print("mean={:.2f}. non-zero mean={:.2f}".format(np.mean(data), np.mean(data[data>0])))
         print("l0={:.3f}. l1={:.3f}. llr={:.3f}. ".format(l0, l1, llr))
         print("df={}. pvalue={:.8f}\n".format(delta_df, pvalue))
     return pvalue
@@ -266,10 +266,17 @@ def zinb_glm_llr_full_test(data, conditions, debug=False):
         if np.all(row_data == row_data[0]):
             pvalues[i,:] = np.nan
             continue
-        
-        if debug:
-            print("mean :", np.mean(data))
-            print("nzmean :", np.mean(data[data>0]))
+
+        print(" pre :", row_data)
+
+        # Rescale the data
+        goal = 10
+        m = np.min(row_data[row_data>0])  # smallest value
+        row_data = (goal/m) * row_data
+        row_data = np.rint(np.array(row_data)).astype(np.int)
+        print("post :", row_data)
+
+
 
         # Here is the likelihood ratio test (LRT)
         pvalue = zinb_glm_llr_test(row_data, conditions, dist="nb", debug=debug)
@@ -290,17 +297,16 @@ def zinb_glm_llr_full_test(data, conditions, debug=False):
 if __name__ == "__main__":
 
     debug = True
-    ta_sites = 2
-    saturation = 1.0
-    conditions = [0]*ta_sites + [1]*ta_sites
-    # print(design_matrix(conditions))
-
+    ta_sites = 4
+    saturation = 0.5
     num_genes = 2
-    min_count = 0
+    min_count = 1
     max_count = 10
-    factor = 100
-    sig = 0.05
+    factor = 1
 
+    conditions = [0]*ta_sites + [1]*ta_sites
+    # conditions = [0, 0, 0, 0, 0, 1, 1, 1]
+    # print(design_matrix(conditions))
     data = np.random.randint(min_count, max_count, size=(num_genes, len(conditions)))
     data += np.random.randint(min_count, factor*max_count, size=(num_genes, len(conditions)))
     # Mask based on an approximate array saturation
@@ -319,29 +325,12 @@ if __name__ == "__main__":
     #     [20000, 25000, 30000, 35000],
     # ] )
 
+    print(data)
+
     pvalues = zinb_glm_llr_full_test(data, conditions, debug=debug)
     pvalues = np.squeeze(pvalues)
 
-    sig_bool = pvalues<sig
+    sig_bool = pvalues<0.05
 
     for i in range(len(data)):
         print(data[i], sig_bool[i], pvalues[i])
-
-    print("Genes :", num_genes)
-    sig_genes = np.sum(sig_bool!=(pvalues==0))
-    print("Significant genes : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/num_genes))
-    print("Nan pvalues : {}".format(np.sum(np.isnan(pvalues))))
-    print("Zero pvalues : {}".format(np.sum(pvalues==0)))
-
-
-    mask = np.isfinite(pvalues)  # update these qvals
-    qvalues = np.full(pvalues.shape, np.nan)
-
-    import statsmodels.stats.multitest
-    rejected, qvalues = statsmodels.stats.multitest.fdrcorrection(pvalues, alpha=0.05)
-
-    print("pvalues :", pvalues)
-    print("sig p:", sig_bool)
-    print("qvalues :", qvalues)
-    print("sig q:", rejected)
-
