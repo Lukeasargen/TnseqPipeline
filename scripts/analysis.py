@@ -69,6 +69,11 @@ def pairwise_comparison(args):
 
     # exit()
 
+    # gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
+    # if args.debug: print("gene_name :", gene_name)
+    # df = tamap[tamap["Gene_ID"]==gene_name]
+    # gene_data = np.array(df[test_columns]).T.reshape(-1)
+
     print(" * Compressing TAmap into Genehits table...")
     fasta_filename = "data/{}/references/{}.fasta".format(args.experiment, args.index) if args.gc else None
     if args.debug: print(f"GC content fasta filename : {fasta_filename}")
@@ -86,8 +91,8 @@ def pairwise_comparison(args):
     print(" * Calculating insertion density per gene...")
     # Need remove intergenic and group by gene
     temp = tamap[tamap['Gene_ID'].notna()].copy()  # Remove intergenic
-    temp["Control"] = temp[controls].sum(axis=1)  # Combine control replicates
-    temp["Sample"] = temp[samples].sum(axis=1)  # Combine sample replicates
+    temp["Control"] = temp[controls].mean(axis=1)  # Combine control replicates
+    temp["Sample"] = temp[samples].mean(axis=1)  # Combine sample replicates
     grouped = temp.groupby("Gene_ID", as_index=False).nunique()  # Builtin method to get unique
     # Unique_Insertions : Unique TA hits / TA Sites
     # Diversity = Unique_Insertions / TA_Counts
@@ -141,6 +146,8 @@ def pairwise_comparison(args):
     # trimmed["Sample_Fitness"] = np.log10( 1000*(1+trimmed["Sample_Hits"])/trimmed["Gene_Length"] )
 
 
+    from scipy.stats import mannwhitneyu, ttest_ind, wilcoxon
+
     print(" * Calculating statistical significance...")
     print("Stop early by pressing Ctrl+C in the terminal.")
     t0 = time.time()  # Start time
@@ -159,10 +166,18 @@ def pairwise_comparison(args):
             # # size is used to get the length of the condition array
             gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
             if args.debug: print("gene_name :", gene_name)
-            df = tamap[tamap['Gene_ID']==gene_name]
-            gene_data = np.array(df[test_columns]).T.reshape(-1)
-            conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
-            pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", debug=args.debug)
+            df = tamap[tamap["Gene_ID"]==gene_name]
+
+            # gene_data = np.array(df[test_columns]).T.reshape(-1)
+            # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
+            # pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", debug=args.debug)
+            
+            data1 = np.array((df[controls].sum(axis=1)))  # Combine control replicates
+            data2 = np.array(df[samples].sum(axis=1))  # Combine sample replicates
+            u_stat, pvalue = mannwhitneyu(data1, data2, alternative="two-sided")
+            # t_stat, pvalue = ttest_ind(data1, data2)
+            # t_stat, pvalue = wilcoxon(data1, data2)
+
             trimmed.loc[i, "P_Value"] = pvalue
         except KeyboardInterrupt:
             break
@@ -181,7 +196,7 @@ def pairwise_comparison(args):
     print("Significant q-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
     print("Zero qvalues : {}".format(np.sum(trimmed["Q_Value"]==0)))
 
-    cutoff = 1e-4
+    cutoff = 0.0
     trimmed["Log10Q"] = -np.log10(trimmed[trimmed["Q_Value"]>cutoff]["Q_Value"])
     trimmed["Log10P"] = -np.log10(trimmed[trimmed["P_Value"]>cutoff]["P_Value"])
     # print(trimmed.sort_values(by="P_Value", ascending=False))
