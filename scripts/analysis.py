@@ -34,6 +34,8 @@ def get_args():
         help="Lowest amount of observed TA sites with hits. default=1.")
     parser.add_argument('--smoothing', default=1, type=float,
         help="Smooth the ratio for small counts. ratio=(sample+smoothing)/(control+smoothing). default=1.")
+    parser.add_argument('--alpha', default=0.05, type=float,
+        help="Significance level. default=0.05.")
     parser.add_argument('--gc', default=False, action='store_true',
         help="Boolean flag that calculates the GC content of each gene. default=False.")
     args = parser.parse_args()
@@ -64,7 +66,7 @@ def pairwise_comparison(args):
     # tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
     # tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
     # tamap = quantile_norm(tamap, q=0.75, columns=test_columns, debug=args.debug)
-    tamap = ttr_norm(tamap, trim=0.1, columns=test_columns, debug=args.debug)
+    tamap = ttr_norm(tamap, trim=0.05, columns=test_columns, debug=args.debug)
     if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
 
     # exit()
@@ -85,7 +87,7 @@ def pairwise_comparison(args):
     genehits["Sample_Hits"] = genehits[samples].mean(axis=1)
     column_stats(genehits, columns=["Control_Hits", "Sample_Hits"])
 
-    # Pairwise analysis below
+    # NOTE : Pairwise analysis below
 
     # TODO : can this be moved into tamap_to_genehits
     print(" * Calculating insertion density per gene...")
@@ -165,7 +167,7 @@ def pairwise_comparison(args):
             # # gene_name is used to index the full TAmap 
             # # size is used to get the length of the condition array
             gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
-            if args.debug: print("gene_name :", gene_name)
+            # if args.debug: print("gene_name :", gene_name)
             df = tamap[tamap["Gene_ID"]==gene_name]
 
             # gene_data = np.array(df[test_columns]).T.reshape(-1)
@@ -174,8 +176,8 @@ def pairwise_comparison(args):
             
             data1 = np.array((df[controls].sum(axis=1)))  # Combine control replicates
             data2 = np.array(df[samples].sum(axis=1))  # Combine sample replicates
-            u_stat, pvalue = mannwhitneyu(data1, data2, alternative="two-sided")
-            # t_stat, pvalue = ttest_ind(data1, data2)
+            # u_stat, pvalue = mannwhitneyu(data1, data2, alternative="two-sided")
+            t_stat, pvalue = ttest_ind(data1, data2)
             # t_stat, pvalue = wilcoxon(data1, data2)
 
             trimmed.loc[i, "P_Value"] = pvalue
@@ -184,17 +186,17 @@ def pairwise_comparison(args):
     
     print()  # ^time estimate ended with return character so this prints a newline
     
-    trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<0.05, trimmed["P_Value"]!=0)
+
+    trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<args.alpha, trimmed["P_Value"]!=0)
     trimmed["Q_Value"] = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
-    trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<0.05, trimmed["Q_Value"]!=0)
+    trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<args.alpha, trimmed["Q_Value"]!=0)
 
     sig_genes = trimmed["P_Sig"].sum()
     print("Significant p-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
-    print("Nan pvalues : {}".format(np.sum(np.isnan(trimmed["P_Value"]))))
-    print("Zero pvalues : {}".format(np.sum(trimmed["P_Value"]==0)))
+    print("Genes not tested : {}".format(np.sum(np.isnan(trimmed["P_Value"]))))
+    print("Test failures : {}".format(np.sum(trimmed["P_Value"]==0)))
     sig_genes = trimmed["Q_Sig"].sum()
     print("Significant q-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
-    print("Zero qvalues : {}".format(np.sum(trimmed["Q_Value"]==0)))
 
     cutoff = 0.0
     trimmed["Log10Q"] = -np.log10(trimmed[trimmed["Q_Value"]>cutoff]["Q_Value"])
@@ -224,8 +226,6 @@ def pairwise_comparison(args):
         ["Start", "LinearDiff", None, False, False],
         ["Log2FC", "LinearDiff", None, False, False],
         ["Log2FC", "Log2_Diversity_Ratio", None, False, False],
-        ["Log2FC", "Log10P", 8, False, False],
-        ["Log2FC", "Log10Q", 8, False, False],
     ]
     if args.gc:
         combine_plots.append(["GC", "Hits", 4, False, True])
@@ -275,6 +275,21 @@ def pairwise_comparison(args):
     plt.ylabel("M = log2(sample) - log2(control)")
     fig.tight_layout()
     plt.savefig(f"data/{args.experiment}/analysis/MA_Plot.png")
+
+
+    # Always make the volcano plot
+    fig = plt.figure(figsize=[12, 8])
+    colors = {False:'tab:green', True:'tab:red'}
+    X = trimmed["Log2FC"]
+    Y = trimmed["Log10P"]
+    plt.scatter(x=X, y=Y, s=8, color=trimmed["P_Sig"].map(colors))
+    plt.hlines(-np.log10(args.alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
+    plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
+    plt.xlabel("log2 fold Change")
+    plt.ylabel("-log10(p-value)")
+    fig.tight_layout()
+    plt.savefig(f"data/{args.experiment}/analysis/Volcano_Plot.png")
+
 
 
 if __name__ == "__main__":
