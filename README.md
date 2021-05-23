@@ -99,26 +99,30 @@ Outputs:
 
 The `reads#.sh` scripts are most useful if you want to use default settings for trimming and aligning. If you need to change these parameters, this is the breakdown of each process called in the read scripts.
 
+## Notice: If you want to run bowtie with different options, you have to change the options in reads1.sh and remove the files from the `reads/processed` folder.
+
+
 ## 1. Trim and Crop - Trimmomatic
 
 ```
-java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 data/$EXPERIMENT_NAME/reads/${READ_NAME}.fastq data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed ILLUMINACLIP:data/$EXPERIMENT_NAME/adapters/${ADPATER_NAME}:2:30:10 TRAILING:20 MINLEN:48 CROP:20
+java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 data/$EXPERIMENT_NAME/reads/${READ_NAME}.fastq data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed ILLUMINACLIP:data/$EXPERIMENT_NAME/adapters/${ADPATER_NAME}:2:30:10 LEADING:20 TRAILING:20 MINLEN:48 CROP:20
 ```
 
 The best way to understand these arguments is to read the manual: http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/TrimmomaticManual_V0.32.pdf
 
 TRAILING and MINLEN are dependent on the experiment. From the manual:
+- LEADING: Cut bases off the start of a read, if below a threshold quality
 - TRAILING: Cut bases off the end of a read, if below a threshold quality
 - MINLEN: Drop the read if it is below a specified length
 - CROP: Cut the read to a specified length by removing bases from the end
 
-These defaults were chosen to work with 50bp reads from an Illumina MiSeq System. The combination of the TRAILING and MINLEN removes all reads that end with more than 2 low quality bases. Even with this strict threshold, only around 5% of reads are dropped. Then the reads are cropped to 20 bp because bowtie works well with short reads (usually 5-18% of alignments fail).
+These defaults were chosen to work with 50bp reads from an Illumina MiSeq System. The combination of the LEADING, TRAILING, and MINLEN removes all reads that start or end with more than 2 low quality bases. Even with this strict threshold, only around 5% of reads are dropped. Then the reads are cropped to 20 bp because bowtie works well with short reads (usually 5-18% of alignments fail).
 
 
 ## 2. Align - Bowtie
 
 ```
-bowtie -t -v 3 -a --best --strata data/$EXPERIMENT_NAME/indexes/$INDEX data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed_mapped
+bowtie -t -v 3 -a -m 1 --best --strata data/$EXPERIMENT_NAME/indexes/$INDEX data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed data/$EXPERIMENT_NAME/reads/processed/${READ_NAME}_trimmed_mapped
 ```
 
 The bowtie manual is a longer read http://bowtie-bio.sourceforge.net/manual.shtml
@@ -130,6 +134,7 @@ Here are the default arguments used:
 | -t | Prints the duration of the alignment |
 | -v 3 | v mode alignments only check mismatches and ignores quality. There will be at most 3 mismatches. |
 | -a | Report all alignments. |
+| -m 1 | If there are multiple alignments, only report the best one. |
 | --best --strata | Best reports in best-to-worst order. Strata reports reads with the least number mismatches. |
 
 ## 3. Map - Python

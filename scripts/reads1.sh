@@ -72,7 +72,7 @@ do
         # LEADING:20 TRAILING:20 MINLEN:48 CROP:20
 
         # Important: MINLEN:48 REMOVES READS WITH 2 BAD BP TRAILING
-        java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str TRAILING:20 MINLEN:48 CROP:20;
+        java -jar tools/Trimmomatic-0.36/trimmomatic-0.36.jar SE -phred33 $input_str $trimmed_str $adapter_str LEADING:20 TRAILING:20 MINLEN:48 CROP:20;
     fi
 
     if [[ -f $mapped_str ]]
@@ -81,8 +81,7 @@ do
     else
         # Run the bowtie alignment
         echo " * Begin Bowtie1 for ${i} and $INDEX...";
-        # -m 1
-        bowtie -t -v 3 -a --best --strata $index_str $trimmed_str $mapped_str;
+        bowtie -t -v 3 -a -m 1 --best --strata $index_str $trimmed_str $mapped_str;
     fi
 
     # Create TA map for the read to the index
