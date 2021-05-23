@@ -197,6 +197,11 @@ python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --s
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --smoothing=1
 ```
 
+--alpha = significance level (default=0.05)
+```
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --alpha=0.05
+```
+
 You can combine the arguments
 
 Control replicates, GC content, minimum of 10 hits per gene, plot
