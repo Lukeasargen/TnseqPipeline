@@ -50,3 +50,66 @@ Select _QuickEdit_ Mode and _Use Ctrl+Shift+C/V as Copy/Paste_. _QuickEdit_ allo
 ![edit_wsl_properties_2](/docs/images/edit_wsl_properties_2.png)
 
 __Ctrl+Shift+C__ and __Ctrl+Shift+V__ will also be copy and paste.
+
+# Install python, pip, java, and bowtie
+
+First, update the apt package manager and get current package versions:
+```
+sudo apt update
+```
+
+You can install everything at once with this command:
+```
+sudo apt install python3 python3-pip openjdk-11-jdk maven bowtie
+```
+If there are issues, each program can be install separately as shown below.
+
+## Install python3 and pip
+
+```
+sudo apt install python3 python3-pip
+```
+
+Verify with:
+```
+python3 -V
+```
+
+Here is the help message from `python3 -V`:
+
+![verify_python](/docs/images/verify_python.png)
+
+## Install java
+
+Trimmomatic uses java. Simply install it with the apt package manager:
+```
+sudo apt install openjdk-11-jdk maven
+```
+
+Verify with:
+```
+java
+```
+
+Here is the help message from `java`:
+
+![verify_java](/docs/images/verify_java.png)
+
+
+## Install bowtie
+
+Bowtie exists in the apt package manager:
+```
+sudo apt install bowtie
+```
+
+Verify with:
+```
+bowtie
+bowtie-build
+bowtie2-inspect
+```
+
+Here is the help message from `bowtie2-inspect`:
+
+![verify_bowtie](/docs/images/verify_bowtie.png)

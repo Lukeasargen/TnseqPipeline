@@ -8,7 +8,9 @@
 
 # Setup Workspace
 
-Open a terminal and change directory to the location you want as your workspace. Run this command to clone this repository:
+First, complete the install instructions on [docs/install.md](docs/install.md).
+
+Then, open a terminal and change directory to the location you want as your workspace. Run this command to clone this repository:
 
 ```
 git clone https://github.com/Lukeasargen/TnseqPipeline.git
@@ -146,36 +148,58 @@ This script is documented in place. Nearly every line has a comment explaining w
 
 # Stage 3 - Analysis
 
-For now, `analysis.py` only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization. Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
+For now, [analysis.py](scripts/analysis.py) only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization (total counts). Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
 
 There are several arguments. Below are examples of each argument.
 
+Display help message
 ```
-# Help message
 python3 scripts/analysis.py -h
+```
 
-# Single reads
+Single reads
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k
+```
 
-# Biological replicates
+Biological replicates
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c25k c50k --samples s25k s50k
+```
 
-# --plot = Create plots of some metrics
+--output = Create a folder in analysis with this name, output here (default="default")
+```
+python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --output=group1v3
+```
+
+--plot = Create plots of some metrics
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --plot
+```
 
-# --gc = Calculates the GC content of each gene 
+--gc = Calculates the GC content of each gene 
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --gc
+```
 
-# --min_count = only use genes that have more counts than this (default=1)
+--min_count = only use genes that have more counts than this (default=1)
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --min_count=1
+```
 
-# --min_inserts = only use genes that have more insertion sites than this (default=2)
+--min_inserts = only use genes that have more insertion sites than this (default=2)
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --min_inserts=2
+```
 
-# --smoothing = smooths the ratio for small counts (default=1)
+--smoothing = smooths the ratio for small counts (default=1)
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --smoothing=1
+```
 
-# You can combine the arguments
-# Control replicates, GC content, minimum of 10 hits per gene, plot
+You can combine the arguments
+
+Control replicates, GC content, minimum of 10 hits per gene, plot
+```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c25k c50k --samples s50k --gc --min_count=10 --plot
 ```
