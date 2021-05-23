@@ -1,10 +1,12 @@
 import os
+import sys
 import time
 import argparse
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.stats import mannwhitneyu, ttest_ind, wilcoxon
 
 from util import tamap_to_genehits, column_stats
 from util import total_count_norm, quantile_norm, gene_length_norm
@@ -54,6 +56,11 @@ def pairwise_comparison(args):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
+    command = "python3 " + " ".join(sys.argv)
+    command_filename = "{}/run_command.txt".format(output_folder)
+    with open(command_filename, "w") as f:
+        f.write(command)
+
     # Supports biological replicates
     print("Controls :", args.controls)
     print("Samples :", args.samples)
@@ -71,9 +78,9 @@ def pairwise_comparison(args):
     print(" * Normalizing...")
     if args.debug: print("\nStats before norm:"); column_stats(tamap, columns=test_columns)
     # tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
-    tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
+    # tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
     # tamap = quantile_norm(tamap, q=0.75, columns=test_columns, debug=args.debug)
-    # tamap = ttr_norm(tamap, trim=0.05, columns=test_columns, debug=args.debug)
+    tamap = ttr_norm(tamap, trim=0.05, columns=test_columns, debug=args.debug)
     if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
 
     # exit()
@@ -117,45 +124,46 @@ def pairwise_comparison(args):
 
     # NOTE : Below starts the actual statistical analysis, everything above was just building the table
 
-    # Count and Observation thresholding
-    print(" * Trimming by minimum counts and unique insertions...")
-    keep = (genehits[["Control_Hits","Sample_Hits"]] >= args.min_count).all(axis=1) & (genehits[["Control_Unique_Insertions","Sample_Unique_Insertions"]] >= args.min_inserts).all(axis=1)
-    trimmed = genehits[keep].copy()
-    removed = genehits[~keep].copy()
-    print("Thresholds: min_count={}. min_inserts={}.".format(args.min_count, args.min_inserts))
-    print("{}({:.2f}%) Genes Removed. {} Genes Remaining.".format(len(removed), 100*len(removed)/len(genehits), len(trimmed)))
-
-    if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions"])
-
-    # Save genes that are removed
-    removed_filename = "{}/removed.csv".format(output_folder)
-    print(" * Saved removed genes to {}".format(removed_filename))
-    removed.to_csv(removed_filename, header=True, index=False)
-
     # Ratio, Log2FC, LinearDiff
     print(" * Calculating fold change...")
-    trimmed["Mean"] = (trimmed["Sample_Hits"] + trimmed["Control_Hits"]) / 2.0
-    trimmed["Ratio"] = (trimmed["Sample_Hits"] + args.smoothing) / (trimmed["Control_Hits"] + args.smoothing)
-    trimmed["Log2FC"] = np.log2(trimmed["Ratio"])
-    trimmed["Log_Sig"] = np.abs(trimmed["Log2FC"]) > 1
-    trimmed["LinearDiff"] = trimmed["Sample_Hits"] - trimmed["Control_Hits"]
-    column_stats(trimmed, columns=["Log2FC"])
-
-    # Possible Metrics
-    trimmed["Diversity_Ratio"] = (trimmed["Sample_Diversity"]) / (trimmed["Control_Diversity"])
-    trimmed["Log2_Diversity_Ratio"] = np.log2(trimmed["Diversity_Ratio"])
-    # print("TRIMMED diversity")
-    # column_stats(trimmed, columns=["Control_Diversity", "Sample_Diversity"])
-    # column_stats(trimmed, columns=["Diversity_Ratio", "Log2_Diversity_Ratio"])
-
+    genehits["Mean"] = (genehits["Sample_Hits"] + genehits["Control_Hits"]) / 2.0
+    genehits["Ratio"] = (genehits["Sample_Hits"] + args.smoothing) / (genehits["Control_Hits"] + args.smoothing)
+    genehits["Log2FC"] = np.log2(genehits["Ratio"])
+    genehits["Log_Sig"] = np.abs(genehits["Log2FC"]) > 1
+    genehits["LinearDiff"] = genehits["Sample_Hits"] - genehits["Control_Hits"]
+    column_stats(genehits, columns=["Log2FC"])
 
     # TODO : Fitness?
     # print(" * Calculating fitness...")
     # trimmed["Sample_Fitness"] = np.log10( 1 + (trimmed["Sample_Hits"]*12e6/trimmed["Sample_Hits"].sum()) / (1000*trimmed["Gene_Length"]) )
     # trimmed["Sample_Fitness"] = np.log10( 1000*(1+trimmed["Sample_Hits"])/trimmed["Gene_Length"] )
 
+    # Count and Observation thresholding
+    print(" * Trimming by minimum counts and unique insertions...")
 
-    from scipy.stats import mannwhitneyu, ttest_ind, wilcoxon
+    # This bool saves whether the gene has counts in all groups
+    hit_bool = ~(genehits[["Control_Unique_Insertions", "Sample_Unique_Insertions"]] == 0).any(axis=1)
+    num_hit = hit_bool.sum()
+    print("{}({:.2f}%) had no hits. {}({:.2f}%) genes had at least one hit.".format( len(genehits)-num_hit, 100*(len(genehits)-num_hit)/len(genehits),num_hit, 100*num_hit/len(genehits) ))
+
+    # Save genes that had no insertions in at least one group
+    no_hit_filename = "{}/no_hits.csv".format(output_folder)
+    print(" * Saved genes with no hits to {}".format(no_hit_filename))
+    genehits[~hit_bool].to_csv(no_hit_filename, header=True, index=False)
+
+    # This bool saves the user defined thresholds
+    keep = (genehits[["Control_Hits","Sample_Hits"]] >= args.min_count).all(axis=1) & (genehits[["Control_Unique_Insertions","Sample_Unique_Insertions"]] >= args.min_inserts).all(axis=1)
+    # Separate the genes that will be tested from the rest
+    trimmed = genehits[keep&hit_bool].copy()
+    removed = genehits[~keep&hit_bool].copy()
+    print("Thresholds: min_count={}. min_inserts={}.".format(args.min_count, args.min_inserts))
+    print("{}({:.2f}%) more genes removed by threshold. {}({:.2f}%) genes remaining.".format( len(removed), 100*len(removed)/len(genehits), len(trimmed), 100*len(trimmed)/len(genehits) ))
+    if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions"])
+
+    # Save genes that are removed
+    removed_filename = "{}/removed.csv".format(output_folder)
+    print(" * Saved removed genes to {}".format(removed_filename))
+    removed.to_csv(removed_filename, header=True, index=False)
 
     print(" * Calculating statistical significance...")
     print("Stop early by pressing Ctrl+C in the terminal.")
@@ -183,8 +191,8 @@ def pairwise_comparison(args):
             
             data1 = np.array((df[controls].mean(axis=1)))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
-            u_stat, pvalue = mannwhitneyu(data1, data2)
-            # t_stat, pvalue = ttest_ind(data1, data2)
+            # u_stat, pvalue = mannwhitneyu(data1, data2)
+            t_stat, pvalue = ttest_ind(data1, data2)
             # t_stat, pvalue = wilcoxon(data1, data2)
 
             trimmed.loc[i, "P_Value"] = pvalue
@@ -198,26 +206,25 @@ def pairwise_comparison(args):
 
 
     trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<args.alpha, trimmed["P_Value"]!=0)
-    trimmed["Q_Value"] = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
-    trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<args.alpha, trimmed["Q_Value"]!=0)
-
+    trimmed["Log10P"] = -np.log10(trimmed["P_Value"])
     sig_genes = trimmed["P_Sig"].sum()
     print("Significant p-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
     print("Genes not tested : {}".format(np.sum(np.isnan(trimmed["P_Value"]))))
     print("Test failures : {}".format(np.sum(trimmed["P_Value"]==0)))
+   
+    print(" * Adjusting p-values for multiple test...")
+    trimmed["Q_Value"] = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
+    trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<args.alpha, trimmed["Q_Value"]!=0)
+    trimmed["Log10Q"] = -np.log10(trimmed["Q_Value"])
     sig_genes = trimmed["Q_Sig"].sum()
     print("Significant q-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
-
-    cutoff = 0.0
-    trimmed["Log10Q"] = -np.log10(trimmed[trimmed["Q_Value"]>cutoff]["Q_Value"])
-    trimmed["Log10P"] = -np.log10(trimmed[trimmed["P_Value"]>cutoff]["P_Value"])
-    # print(trimmed.sort_values(by="P_Value", ascending=False))
 
     # Save the comparison
     pairwise_filename = "{}/pairwise.csv".format(output_folder)
     print(" * Saved pairwise analysis to {}".format(pairwise_filename))
     trimmed.to_csv(pairwise_filename, header=True, index=False)
 
+    # print(trimmed.sort_values(by="P_Value", ascending=False))
     # print(trimmed.sort_values(by="Sample_Fitness", ascending=False)[["Gene_ID", "Sample_Fitness"]])
     # exit()
 
@@ -235,11 +242,13 @@ def pairwise_comparison(args):
         ["Start", "Log2FC", None, False, False],
         ["Start", "LinearDiff", None, False, False],
         ["Log2FC", "LinearDiff", None, False, False],
-        ["Log2FC", "Log2_Diversity_Ratio", None, False, False],
     ]
     if args.gc:
         combine_plots.append(["GC", "Hits", 4, False, True])
         single_plots.append(["Start", "GC", None, False, False])
+
+    colors = {False:'tab:green', True:'tab:red'}
+    p_sig_colors = trimmed["P_Sig"].map(colors)
 
     if args.plot:
         print(" * Calculating generating plots...")
@@ -261,7 +270,7 @@ def pairwise_comparison(args):
             print("Plotting x={} y={}".format(x, y))
             fig = plt.figure(figsize=[16, 8])
             ax = fig.add_subplot(111)
-            ax.scatter(x=trimmed[x], y=trimmed[y], s=s, color="tab:green")
+            ax.scatter(x=trimmed[x], y=trimmed[y], s=s, color=p_sig_colors)
             # plt.hlines(trimmed[y].median(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:red", label="Median={:.2f}".format(trimmed[y].median()))
             # plt.hlines(trimmed[y].mean(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:blue", label="Mean={:.2f}".format(trimmed[y].mean()))
             ax.set_xlabel(x)
@@ -276,10 +285,10 @@ def pairwise_comparison(args):
     fig = plt.figure(figsize=[12, 8])
     A = 0.5 * ( np.log2(trimmed["Sample_Hits"]) + np.log2(trimmed["Control_Hits"]) )
     M = trimmed["Log2FC"]
-    colors = {False:'tab:green', True:'tab:red'}
-    plt.scatter(x=A, y=M, s=10, color=trimmed["P_Sig"].map(colors))
+    plt.scatter(x=A, y=M, s=10, color=p_sig_colors)
     plt.hlines(M.median(), xmin=A.min(), xmax=A.max(), color="tab:red", label="Median={:.2f}".format(M.median()))
     plt.hlines(M.mean(), xmin=A.min(), xmax=A.max(), color="tab:blue", label="Mean={:.2f}".format(M.mean()))
+    plt.hlines([-1, 1], xmin=A.min(), xmax=A.max(), color="tab:blue", linestyle='dashed')
     plt.legend()
     plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
     plt.ylabel("M = log2(sample) - log2(control)")
@@ -289,16 +298,17 @@ def pairwise_comparison(args):
 
     # Always make the volcano plot
     fig = plt.figure(figsize=[12, 8])
-    colors = {False:'tab:green', True:'tab:red'}
     X = trimmed["Log2FC"]
     Y = trimmed["Log10P"]
-    plt.scatter(x=X, y=Y, s=8, color=trimmed["P_Sig"].map(colors))
+    plt.scatter(x=X, y=Y, s=8, color=p_sig_colors)
     plt.hlines(-np.log10(args.alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
     plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
     plt.xlabel("log2 fold Change")
     plt.ylabel("-log10(p-value)")
     fig.tight_layout()
     plt.savefig(f"{output_folder}/Volcano_Plot.png")
+    plt.ylim(Y.min(), min(4, Y.max()))
+    plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
 
 
 
