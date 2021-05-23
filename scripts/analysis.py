@@ -1,3 +1,4 @@
+import os
 import time
 import argparse
 
@@ -20,10 +21,12 @@ def get_args():
         help="Experiment folder name.")
     parser.add_argument('--index', type=str, required=True,
         help="Index name.")
-    parser.add_argument('--controls', nargs='+', default=[], type=str, required=True,
+    parser.add_argument('--controls', nargs='+', type=str, required=True,
         help="List read names without the filetype and separated by a space.")
-    parser.add_argument('--samples', nargs='+', default=[], type=str, required=True,
+    parser.add_argument('--samples', nargs='+', type=str, required=True,
         help="List read names without the filetype and separated by a space.")
+    parser.add_argument('--output', type=str, default="default",
+        help="Output name. Analysis outputs to a folder with this name.")
     parser.add_argument('--debug', default=False, action='store_true',
         help="Boolean flag that outputs debugging messages. default=False.")
     parser.add_argument('--plot', default=False, action='store_true',
@@ -46,7 +49,11 @@ def pairwise_comparison(args):
     """ Compare the controls and samples.
         Support replicates. Input as lists.
     """
-    # Pairwise Comparisons
+
+    output_folder = "data/{}/analysis/{}".format(args.experiment, args.output)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
     # Supports biological replicates
     print("Controls :", args.controls)
     print("Samples :", args.samples)
@@ -64,9 +71,9 @@ def pairwise_comparison(args):
     print(" * Normalizing...")
     if args.debug: print("\nStats before norm:"); column_stats(tamap, columns=test_columns)
     # tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
-    # tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
+    tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
     # tamap = quantile_norm(tamap, q=0.75, columns=test_columns, debug=args.debug)
-    tamap = ttr_norm(tamap, trim=0.05, columns=test_columns, debug=args.debug)
+    # tamap = ttr_norm(tamap, trim=0.05, columns=test_columns, debug=args.debug)
     if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
 
     # exit()
@@ -121,7 +128,7 @@ def pairwise_comparison(args):
     if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions"])
 
     # Save genes that are removed
-    removed_filename = "data/{}/analysis/removed.csv".format(args.experiment)
+    removed_filename = "{}/removed.csv".format(output_folder)
     print(" * Saved removed genes to {}".format(removed_filename))
     removed.to_csv(removed_filename, header=True, index=False)
 
@@ -159,11 +166,11 @@ def pairwise_comparison(args):
     for i in trimmed.index:
         try:
             # Helpful time estimate
-            if (c+1) % 10 == 0:
-                duration = time.time()-t0
-                remaining = duration/(c+1) * (len(trimmed)-c+1)
-                print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c+1, len(trimmed), (c+1)/duration, time_to_string(duration), time_to_string(remaining)), end="\r")
             c += 1
+            if c%10 == 0:
+                duration = time.time()-t0
+                remaining = duration/c * (len(trimmed)-c)
+                print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c, len(trimmed), c/duration, time_to_string(duration), time_to_string(remaining)), end="\r")
             # # gene_name is used to index the full TAmap 
             # # size is used to get the length of the condition array
             gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
@@ -174,18 +181,21 @@ def pairwise_comparison(args):
             # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
             # pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", debug=args.debug)
             
-            data1 = np.array((df[controls].sum(axis=1)))  # Combine control replicates
-            data2 = np.array(df[samples].sum(axis=1))  # Combine sample replicates
-            # u_stat, pvalue = mannwhitneyu(data1, data2, alternative="two-sided")
-            t_stat, pvalue = ttest_ind(data1, data2)
+            data1 = np.array((df[controls].mean(axis=1)))  # Combine control replicates
+            data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
+            u_stat, pvalue = mannwhitneyu(data1, data2)
+            # t_stat, pvalue = ttest_ind(data1, data2)
             # t_stat, pvalue = wilcoxon(data1, data2)
 
             trimmed.loc[i, "P_Value"] = pvalue
         except KeyboardInterrupt:
             break
-    
-    print()  # ^time estimate ended with return character so this prints a newline
-    
+
+    # ^time estimate ended with return character so this prints a newline
+    duration = time.time()-t0
+    remaining = duration/c * (len(trimmed)-c)
+    print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c, len(trimmed), c/duration, time_to_string(duration), time_to_string(remaining)))
+
 
     trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<args.alpha, trimmed["P_Value"]!=0)
     trimmed["Q_Value"] = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
@@ -204,7 +214,7 @@ def pairwise_comparison(args):
     # print(trimmed.sort_values(by="P_Value", ascending=False))
 
     # Save the comparison
-    pairwise_filename = "data/{}/analysis/pairwise.csv".format(args.experiment)
+    pairwise_filename = "{}/pairwise.csv".format(output_folder)
     print(" * Saved pairwise analysis to {}".format(pairwise_filename))
     trimmed.to_csv(pairwise_filename, header=True, index=False)
 
@@ -245,7 +255,7 @@ def pairwise_comparison(args):
             if ylog: ax.set_yscale('log')
             plt.legend()
             fig.tight_layout()
-            plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
+            plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
 
         for x, y, s, xlog, ylog in single_plots:
             print("Plotting x={} y={}".format(x, y))
@@ -259,7 +269,7 @@ def pairwise_comparison(args):
             if xlog: ax.set_xscale('log')
             if ylog: ax.set_yscale('log')
             fig.tight_layout()
-            plt.savefig(f"data/{args.experiment}/analysis/{x}_vs_{y}.png")
+            plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
 
 
     # Always make the MA plot
@@ -274,7 +284,7 @@ def pairwise_comparison(args):
     plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
     plt.ylabel("M = log2(sample) - log2(control)")
     fig.tight_layout()
-    plt.savefig(f"data/{args.experiment}/analysis/MA_Plot.png")
+    plt.savefig(f"{output_folder}/MA_Plot.png")
 
 
     # Always make the volcano plot
@@ -288,7 +298,7 @@ def pairwise_comparison(args):
     plt.xlabel("log2 fold Change")
     plt.ylabel("-log10(p-value)")
     fig.tight_layout()
-    plt.savefig(f"data/{args.experiment}/analysis/Volcano_Plot.png")
+    plt.savefig(f"{output_folder}/Volcano_Plot.png")
 
 
 
