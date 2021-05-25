@@ -31,6 +31,7 @@ def get_args():
         help="Output name. Analysis outputs to a folder with this name.")
     parser.add_argument('--debug', default=False, action='store_true',
         help="Boolean flag that outputs debugging messages. default=False.")
+
     parser.add_argument('--plot', default=False, action='store_true',
         help="Boolean flag that automatically makes a few plots of the data. default=False.")
     parser.add_argument('--min_count', default=1, type=int,
@@ -43,6 +44,9 @@ def get_args():
         help="Significance level. default=0.05.")
     parser.add_argument('--gc', default=False, action='store_true',
         help="Boolean flag that calculates the GC content of each gene. default=False.")
+    parser.add_argument('--pooling', type=str, default="sum",
+        choices=["sum", "average"],
+        help="Output name. Analysis outputs to a folder with this name.")
     args = parser.parse_args()
     return args
 
@@ -83,17 +87,10 @@ def pairwise_comparison(args):
     tamap = ttr_norm(tamap, trim=0.05, columns=test_columns, debug=args.debug)
     if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
 
-    # exit()
-
-    # gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
-    # if args.debug: print("gene_name :", gene_name)
-    # df = tamap[tamap["Gene_ID"]==gene_name]
-    # gene_data = np.array(df[test_columns]).T.reshape(-1)
-
     print(" * Compressing TAmap into Genehits table...")
     fasta_filename = "data/{}/references/{}.fasta".format(args.experiment, args.index) if args.gc else None
     if args.debug: print(f"GC content fasta filename : {fasta_filename}")
-    genehits = tamap_to_genehits(tamap, fasta_filename)
+    genehits = tamap_to_genehits(tamap, fasta_filename=fasta_filename, pooling=args.pooling)
 
     # Combine the replicates, average the counts
     print(" * Combining replicates...")

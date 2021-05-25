@@ -36,7 +36,7 @@ def read_fasta(filename, ret_name=False):
     return fullseq
 
 
-def tamap_to_genehits(tamap, fasta_filename=None):
+def tamap_to_genehits(tamap, fasta_filename=None, pooling="sum"):
     """ Covert a TAmap table into a GeneHits table """
     tamap = tamap.copy()
     # Remove the intergenic regions
@@ -59,13 +59,25 @@ def tamap_to_genehits(tamap, fasta_filename=None):
             gc = seq.count('g') + seq.count('c')
             genehits.loc[i, "GC"] = (gc)/len(seq)
     # Add the forward and reverse reads
-    gene_hits_sum = grouped.sum()  # Get the number of hits per gene
+    if pooling=="sum":
+          # Get the total number of hits per gene TA sites
+        gene_hits_sum = grouped.sum()
+    if pooling=="average":
+        """ Used in "Genome-Wide Fitness and Genetic Interactions Determined by Tn-seq, a High-Throughput Massively Parallel Sequencing Method for Microorganisms"
+            https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4696536/
+            Mentioned under "Anticipated Results"
+        """
+        # Get the average of all TA sites per gene
+        gene_hits_sum = grouped.mean()
+        
     for name in map_names:
         genehits[name] = gene_hits_sum[name]
     return genehits
 
 
-""" Normalization Operations """
+""" Normalization Operations
+    Applied to TAmap, but they should work on Genehits tables.
+"""
 
 def total_count_norm(genehits, columns=None, debug=False):
     """ Normalize genehits using the total reads. """
