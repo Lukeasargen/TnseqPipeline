@@ -130,18 +130,31 @@ def pairwise_comparison(args):
     genehits["LinearDiff"] = genehits["Sample_Hits"] - genehits["Control_Hits"]
     column_stats(genehits, columns=["Log2FC"])
 
-    # TODO : Fitness?
-    # print(" * Calculating fitness...")
+    # Fitness
+    print(" * Calculating fitness...")
     # trimmed["Sample_Fitness"] = np.log10( 1 + (trimmed["Sample_Hits"]*12e6/trimmed["Sample_Hits"].sum()) / (1000*trimmed["Gene_Length"]) )
     # trimmed["Sample_Fitness"] = np.log10( 1000*(1+trimmed["Sample_Hits"])/trimmed["Gene_Length"] )
 
+    # genehits["Sample_Fitness"] = (np.log(genehits["Sample_Diversity"]) - np.log(genehits["Control_Diversity"])) / (np.log(1-genehits["Sample_Diversity"]) - np.log(1-genehits["Control_Diversity"]))
+    # column_stats(genehits, columns=["Sample_Fitness"])
+
     # Count and Observation thresholding
-    print(" * Trimming by minimum counts and unique insertions...")
+    print(" * Trimming away low saturated genes...")
+
+    # First, find "possibly essential" genes
+    # TODO : citation. Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms
+    possibly = (genehits[["Control_Hits","Sample_Hits"]] < 3).any(axis=1) & (genehits["Gene_Length"] >= 400)
+    possibly_filename = "{}/possibly_essential.csv".format(output_folder)
+    print("{}/{}({:.2f}%) possibly essential genes.".format( possibly.sum(), len(genehits), 100*possibly.sum()/len(genehits) ) )
+
+    # Save the possibly essential genes
+    print(" * Saved possibly essential genes to {}".format(possibly_filename))
+    genehits[possibly].to_csv(possibly_filename, header=True, index=False)
 
     # This bool saves whether the gene has counts in all groups
     hit_bool = ~(genehits[["Control_Unique_Insertions", "Sample_Unique_Insertions"]] == 0).any(axis=1)
     num_hit = hit_bool.sum()
-    print("{}({:.2f}%) had no hits. {}({:.2f}%) genes had at least one hit.".format( len(genehits)-num_hit, 100*(len(genehits)-num_hit)/len(genehits),num_hit, 100*num_hit/len(genehits) ))
+    print("{}/{}({:.2f}%) had no hits in one group. {}/{}({:.2f}%) had at least one hit in all groups.".format( len(genehits)-num_hit, len(genehits), 100*(len(genehits)-num_hit)/len(genehits), num_hit, len(genehits), 100*num_hit/len(genehits) ))
 
     # Save genes that had no insertions in at least one group
     no_hit_filename = "{}/no_hits.csv".format(output_folder)
@@ -153,14 +166,15 @@ def pairwise_comparison(args):
     # Separate the genes that will be tested from the rest
     trimmed = genehits[keep&hit_bool].copy()
     removed = genehits[~keep&hit_bool].copy()
-    print("Thresholds: min_count={}. min_inserts={}.".format(args.min_count, args.min_inserts))
-    print("{}({:.2f}%) more genes removed by threshold. {}({:.2f}%) genes remaining.".format( len(removed), 100*len(removed)/len(genehits), len(trimmed), 100*len(trimmed)/len(genehits) ))
+    print(" * Thresholds: min_count={}. min_inserts={}.".format(args.min_count, args.min_inserts))
+    print("{}/{}({:.2f}%) more genes removed by threshold. {}/{}({:.2f}%) genes remaining.".format( len(removed), len(genehits), 100*len(removed)/len(genehits), len(trimmed), len(genehits), 100*len(trimmed)/len(genehits) ))
     if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions"])
 
     # Save genes that are removed
     removed_filename = "{}/removed.csv".format(output_folder)
     print(" * Saved removed genes to {}".format(removed_filename))
     removed.to_csv(removed_filename, header=True, index=False)
+
 
     print(" * Calculating statistical significance...")
     print("Stop early by pressing Ctrl+C in the terminal.")
@@ -225,6 +239,7 @@ def pairwise_comparison(args):
     # print(trimmed.sort_values(by="Sample_Fitness", ascending=False)[["Gene_ID", "Sample_Fitness"]])
     # exit()
 
+    # TODO : move plotting to separate script, import functions to use here
     # Plotting below
     # These are scatter plots for now
     combine_plots = [ # x, y suffix, s, xlog, ylog
