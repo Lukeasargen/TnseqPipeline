@@ -15,8 +15,19 @@ echo "FASTA: $FASTA";
 echo "GENBANK: $GENBANK";
 echo "OUTPUT: $OUTPUT";
 
-# Create the index
-bowtie-build data/$EXPERIMENT_NAME/references/$FASTA data/$EXPERIMENT_NAME/indexes/$OUTPUT
+
+index_dir=data/$EXPERIMENT_NAME/indexes/$OUTPUT
+
+shopt -s extglob nullglob globstar
+indexes=($index_dir*.ebwt)
+if [[ -f $indexes ]]
+then
+    echo "Indexes already exist on your filesystem."
+else
+    # Create the bowtie index
+    bowtie-build data/$EXPERIMENT_NAME/references/$FASTA data/$EXPERIMENT_NAME/indexes/$OUTPUT
+fi
+
 
 # Run the python script
 python3 scripts/referenceTAlist.py --experiment=$EXPERIMENT_NAME --fasta=$FASTA --genbank=$GENBANK --output=$OUTPUT
@@ -30,7 +41,6 @@ cmd_str="./scripts/reads1.sh -e $EXPERIMENT_NAME -i $OUTPUT";
 adapter_dir=data/$EXPERIMENT_NAME/adapters/
 reads_dir=data/$EXPERIMENT_NAME/reads/
 
-shopt -s extglob nullglob globstar
 adapters=($adapter_dir*.fasta)
 adapters+=($adapter_dir*.fa)
 reads=($reads_dir*.fastq)
