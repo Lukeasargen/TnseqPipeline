@@ -29,24 +29,28 @@ def get_args():
         help="List read names without the filetype and separated by a space.")
     parser.add_argument('--output', type=str, default="default",
         help="Output name. Analysis outputs to a folder with this name.")
+
     parser.add_argument('--debug', default=False, action='store_true',
         help="Boolean flag that outputs debugging messages. default=False.")
-
     parser.add_argument('--plot', default=False, action='store_true',
         help="Boolean flag that automatically makes a few plots of the data. default=False.")
+    parser.add_argument('--gc', default=False, action='store_true',
+        help="Boolean flag that calculates the GC content of each gene. Not used in any test, but saved in the output. default=False.")
+
+    parser.add_argument('--pooling', type=str, default="sum",
+        choices=["sum", "average"],
+        help="Sum or average the hits PER GENE to get a merged value for the expression at the gene level. default=sum.")
     parser.add_argument('--min_count', default=1, type=int,
-        help="Lowest number of hits per gene. Removes zeros to eliminate log errors. default=1.")
+        help="Threshold for lowest number of hits PER GENE after pooling. These genes are not tested for significance and saved in a separate output table. default=1.")
     parser.add_argument('--min_inserts', default=2, type=int,
-        help="Lowest amount of observed TA sites with hits. default=1.")
+        help="Threshold for lowest number of insertion sites with hits BY GENE. These genes are not tested for significance and saved in a separate output table. default=2.")
     parser.add_argument('--smoothing', default=1, type=float,
         help="Smooth the ratio for small counts. ratio=(sample+smoothing)/(control+smoothing). default=1.")
     parser.add_argument('--alpha', default=0.05, type=float,
         help="Significance level. default=0.05.")
-    parser.add_argument('--gc', default=False, action='store_true',
-        help="Boolean flag that calculates the GC content of each gene. default=False.")
-    parser.add_argument('--pooling', type=str, default="sum",
-        choices=["sum", "average"],
-        help="Output name. Analysis outputs to a folder with this name.")
+    parser.add_argument('--insert_weighting', default=False, action='store_true',
+        help="Boolean flag that scales PER GENE based on unique inserts. It increases the Formula is new_hits=old_hits*(unique_inserts/average_unique_inserts). default=False.")
+
     args = parser.parse_args()
     return args
 
@@ -109,7 +113,7 @@ def pairwise_comparison(args):
     grouped = temp.groupby("Gene_ID", as_index=False).nunique()  # Builtin method to get unique
     # Unique_Insertions : Unique TA hits / TA Sites
     # Diversity = Unique_Insertions / TA_Counts
-    # Subtract 1 bc it counts the 0 counts as unique but we don't care about this
+    # Subtract 1 bc it counts the 0 counts as unique but we don't care about this, genes with 0 hits should have 0 unique insertions
     genehits["Control_Unique_Insertions"] = grouped["Control"]-1
     genehits["Sample_Unique_Insertions"] = grouped["Sample"]-1
     genehits["Control_Diversity"] = genehits["Control_Unique_Insertions"] / genehits["TA_Count"]
@@ -119,16 +123,26 @@ def pairwise_comparison(args):
     del grouped
     column_stats(genehits, columns=["Control_Diversity", "Sample_Diversity"])
 
+    # TSAS Weighting
+    if args.insert_weighting:
+        """ https://github.com/srimam/TSAS """
+        print(" * Calculating insertion weighting (TSAS by Saheed Imam)...")
+        avg_unique = (genehits["Control_Unique_Insertions"].mean()+genehits["Sample_Unique_Insertions"].mean()) / 2.0
+        genehits["Control_Hits"] = genehits["Control_Hits"] * (genehits["Control_Unique_Insertions"]/avg_unique)
+        genehits["Sample_Hits"] = genehits["Sample_Hits"] * (genehits["Sample_Unique_Insertions"]/avg_unique)
+
     # NOTE : Below starts the actual statistical analysis, everything above was just building the table
 
-    # Ratio, Log2FC, LinearDiff
-    print(" * Calculating fold change...")
-    genehits["Mean"] = (genehits["Sample_Hits"] + genehits["Control_Hits"]) / 2.0
-    genehits["Ratio"] = (genehits["Sample_Hits"] + args.smoothing) / (genehits["Control_Hits"] + args.smoothing)
-    genehits["Log2FC"] = np.log2(genehits["Ratio"])
-    genehits["Log_Sig"] = np.abs(genehits["Log2FC"]) > 1
-    genehits["LinearDiff"] = genehits["Sample_Hits"] - genehits["Control_Hits"]
-    column_stats(genehits, columns=["Log2FC"])
+    print(" * Calculating differential statistics...")
+    # Reads differences
+    genehits["Ratio_Reads"] = (genehits["Sample_Hits"] + args.smoothing) / (genehits["Control_Hits"] + args.smoothing)
+    genehits["Log2FC_Reads"] = np.log2(genehits["Ratio_Reads"])
+    genehits["LinearDiff_Reads"] = genehits["Sample_Hits"] - genehits["Control_Hits"]
+    # Inserts differences
+    genehits["Ratio_Inserts"] = (genehits["Sample_Unique_Insertions"] + args.smoothing) / (genehits["Control_Unique_Insertions"] + args.smoothing)
+    genehits["Log2FC_Inserts"] = np.log2(genehits["Ratio_Inserts"])
+    genehits["LinearDiff_Inserts"] = genehits["Sample_Unique_Insertions"] - genehits["Control_Unique_Insertions"]
+
 
     # Fitness
     print(" * Calculating fitness...")
@@ -143,7 +157,7 @@ def pairwise_comparison(args):
 
     # First, find "possibly essential" genes
     # TODO : citation. Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms
-    possibly = (genehits[["Control_Hits","Sample_Hits"]] < 3).any(axis=1) & (genehits["Gene_Length"] >= 400)
+    possibly = (genehits[["Control_Unique_Insertions","Sample_Unique_Insertions"]] < 3).any(axis=1) & (genehits["Gene_Length"] >= 400)
     possibly_filename = "{}/possibly_essential.csv".format(output_folder)
     print("{}/{}({:.2f}%) possibly essential genes.".format( possibly.sum(), len(genehits), 100*possibly.sum()/len(genehits) ) )
 
@@ -251,9 +265,14 @@ def pairwise_comparison(args):
     single_plots = [ # x, y, s, xlog, ylog
         ["Gene_Length", "TA_Count", 2, True, True],
         ["Control_Hits", "Sample_Hits", 4, True, True],
-        ["Start", "Log2FC", None, False, False],
-        ["Start", "LinearDiff", None, False, False],
-        ["Log2FC", "LinearDiff", None, False, False],
+        # Reads differences
+        ["Start", "Log2FC_Reads", None, False, False],
+        ["Start", "LinearDiff_Reads", None, False, False],
+        ["Log2FC_Reads", "LinearDiff_Reads", None, False, False],
+        # Inserts differences
+        ["Start", "Log2FC_Inserts", None, False, False],
+        ["Start", "LinearDiff_Inserts", None, False, False],
+        ["Log2FC_Inserts", "LinearDiff_Inserts", None, False, False],
     ]
     if args.gc:
         combine_plots.append(["GC", "Hits", 4, False, True])
@@ -293,34 +312,36 @@ def pairwise_comparison(args):
             plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
 
 
-    # Always make the MA plot
-    fig = plt.figure(figsize=[12, 8])
-    A = 0.5 * ( np.log2(trimmed["Sample_Hits"]) + np.log2(trimmed["Control_Hits"]) )
-    M = trimmed["Log2FC"]
-    plt.scatter(x=A, y=M, s=10, color=p_sig_colors)
-    plt.hlines(M.median(), xmin=A.min(), xmax=A.max(), color="tab:red", label="Median={:.2f}".format(M.median()))
-    plt.hlines(M.mean(), xmin=A.min(), xmax=A.max(), color="tab:blue", label="Mean={:.2f}".format(M.mean()))
-    plt.hlines([-1, 1], xmin=A.min(), xmax=A.max(), color="tab:blue", linestyle='dashed')
-    plt.legend()
-    plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
-    plt.ylabel("M = log2(sample) - log2(control)")
-    fig.tight_layout()
-    plt.savefig(f"{output_folder}/MA_Plot.png")
+        # Make the MA plot
+        print("Plotting MA plot")
+        fig = plt.figure(figsize=[12, 8])
+        A = 0.5 * ( np.log2(trimmed["Sample_Hits"]) + np.log2(trimmed["Control_Hits"]) )
+        M = trimmed["Log2FC_Reads"]
+        plt.scatter(x=A, y=M, s=10, color=p_sig_colors)
+        plt.hlines(M.median(), xmin=A.min(), xmax=A.max(), color="tab:red", label="Median={:.2f}".format(M.median()))
+        plt.hlines(M.mean(), xmin=A.min(), xmax=A.max(), color="tab:blue", label="Mean={:.2f}".format(M.mean()))
+        plt.hlines([-1, 1], xmin=A.min(), xmax=A.max(), color="tab:blue", linestyle='dashed')
+        plt.legend()
+        plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
+        plt.ylabel("M = log2(sample) - log2(control)")
+        fig.tight_layout()
+        plt.savefig(f"{output_folder}/MA_Plot.png")
 
 
-    # Always make the volcano plot
-    fig = plt.figure(figsize=[12, 8])
-    X = trimmed["Log2FC"]
-    Y = trimmed["Log10P"]
-    plt.scatter(x=X, y=Y, s=8, color=p_sig_colors)
-    plt.hlines(-np.log10(args.alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
-    plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
-    plt.xlabel("log2 fold Change")
-    plt.ylabel("-log10(p-value)")
-    fig.tight_layout()
-    plt.savefig(f"{output_folder}/Volcano_Plot.png")
-    plt.ylim(Y.min(), min(4, Y.max()))
-    plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
+        # Make the volcano plot
+        print("Plotting Volcano plot")
+        fig = plt.figure(figsize=[12, 8])
+        X = trimmed["Log2FC_Reads"]
+        Y = trimmed["Log10P"]
+        plt.scatter(x=X, y=Y, s=8, color=p_sig_colors)
+        plt.hlines(-np.log10(args.alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
+        plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
+        plt.xlabel("log2 fold Change")
+        plt.ylabel("-log10(p-value)")
+        fig.tight_layout()
+        plt.savefig(f"{output_folder}/Volcano_Plot.png")
+        plt.ylim(Y.min(), min(4, Y.max()))
+        plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
 
 
 
