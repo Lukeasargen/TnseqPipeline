@@ -3,8 +3,12 @@ Creates the TA list from a genome sequence.
 Uses the genbank file to get names and tags for genes.
 """
 import re  # Get loci from string
+import sys  # Save command
 import argparse
-import shutil
+import shutil  # Copy fasta file
+
+import pandas as pd  # To load and do some calculations
+import matplotlib.pyplot as plt
 
 from util import read_fasta
 
@@ -20,7 +24,13 @@ def get_args():
 
 
 def make_TAlist(args):
-    print(" * Creating a TAlist for {}.fasta and {}.gb".format(args.fasta, args.genbank))
+
+    # String that has all the stats to be saved in a file
+    build_filename = "data/{}/references/{}_build_info.txt".format(args.experiment, args.output)
+    build_str = "Command:"
+    build_str += "\npython3 " + " ".join(sys.argv)
+
+    print(" * Creating a TAlist for {} and {}".format(args.fasta, args.genbank))
 
     # We know these files exist if the bowtie step worked
     fasta_filename = "data/{}/references/{}".format(args.experiment, args.fasta)
@@ -29,25 +39,31 @@ def make_TAlist(args):
     # This is where the TAlist is output
     output_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.output)
     merge_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.output)
-    print("Output Location:", output_filename)
-    # THis file will have the names of genes with no TA sites
-    no_ta_filename = "data/{}/references/{}_noTA.txt".format(args.experiment, args.output)
 
+    print(" * Loading genome from {}...".format(fasta_filename))
     fullseq, geneome_name = read_fasta(fasta_filename, ret_name=True)
-    print("Full Sequence Length =", len(fullseq))
-    print("Geneome name:", geneome_name)
+
+    build_str += "\n\nGeneome name: " + geneome_name
+    build_str += "\nGeneome length (bp): " + str(len(fullseq))
+
+    # Calculate the GC content
+    gc = fullseq.count('G') + fullseq.count('C')
+    build_str += "\nGC content : {:.3f}".format( gc/len(fullseq) )
 
     # Now, we find every single TA site from the fullseq string
     # startswith finds the index before the T so that's why idx+1 is needed
     # Add 1 if you want to know what the A location is
     ta_sites = [idx+1 for idx in range(len(fullseq)) if fullseq.startswith("TA", idx)]
-    print("Total TA Sites =", len(ta_sites))
+
+    build_str += "\nTotal TA Sites: " + str(len(ta_sites))
+
+    # Debugging
     # This is the first TA
     # The -1 is because arrays are 0 indexed
-    print("First TA is at {}: {}".format(ta_sites[0], fullseq[ta_sites[0]-1:ta_sites[0]+1]))
+    # print("First TA is at {}: {}".format(ta_sites[0], fullseq[ta_sites[0]-1:ta_sites[0]+1]))
     # Now we know were every TA site is
 
-
+    print(" * Loading genes from {}...".format(gb_filename))
     # Open genbank and removes the endline character
     unedited = [line.rstrip('\n') for line in open(gb_filename, 'r')]  # encoding="utf-8"
 
@@ -57,11 +73,12 @@ def make_TAlist(args):
 
     # Here we get the gene feature idexes for the next for loop
     features_idxs = [idx for idx in range(len(unedited)) if unedited[idx].startswith("     gene")]
-    print("Total Genes:", len(features_idxs))
+    build_str += "\nTotal Genes: " + str(len(features_idxs))
 
     ta_idx = 0  # step through all the ta sites
     prev_gene_end = 0  # used to marked the first intergenic region could start at 0
 
+    print(" * Create TA map of all TA sites...")
     # Go through each gene in genbank, get the features, make the TA list
     # for readablity, anythin that starts with "gene_" will be in the TA list
     for i in range(len(features_idxs)):
@@ -149,8 +166,6 @@ def make_TAlist(args):
         if ta_idx >= len(ta_sites):
             break
 
-    print("Genes with no TA sites :", len(no_ta_array))
-
     # Save everything
     # This is the backup TA list
     with open(output_filename, "w") as filehandle:
@@ -162,14 +177,48 @@ def make_TAlist(args):
         for line in output_array:
             filehandle.writelines("%s\n" % line)
 
-    # These are the genes that don't have TA sites
-    with open(no_ta_filename, "w") as filehandle:
-        for line in no_ta_array:
-            filehandle.writelines("%s\n" % line)
+
+    # I probably should have used a dataframe the whole time, but re-writting that is not a priority
+    # Reload as pandas dataframe
+    tamap = pd.read_csv(merge_filename, delimiter=",")
+    # Difference between rows
+    df = tamap["TA_Site"].diff()
+    # Geonome is circular so this is the diffrence between last and first
+    df.iloc[0] = len(fullseq)-tamap.iloc[-1]["TA_Site"]+tamap.iloc[0]["TA_Site"]
+
+    build_str += "\nAverge gap between TA sites: {:.2f} bp".format(df.mean())
+    build_str += "\nMax gap between TA sites: {:.0f} bp".format(df.max())
+
+    # Find region with the largest gap
+    build_str += "\nLoci with the largest gap: " + str(tamap.iloc[df.idxmax()]["Loci"])
+
+    # TODO : test for uniform distribution?
+
+    # This graph can visually insepct uniformity
+    # Uniform distribution has a linear cdf
+    fig = plt.figure(figsize=[16, 16])
+    ax = fig.add_subplot(111)
+    ax.plot(list(range(len(df))), df.cumsum().to_numpy(), color="tab:green", label="TA Sites")
+    ax.plot([0, len(df)], [0, len(fullseq)], color="tab:red", label="Uniform")
+    plt.legend(loc="upper left")
+    fig.tight_layout()   
+    plt.savefig("data/{}/references/{}_cdf_of_ta.png".format(args.experiment, args.output))
+
+    build_str += "\n\nGenes with NO TA SITES: {}/{} ({:.2f}%)".format(len(no_ta_array), len(features_idxs), 100*len(no_ta_array)/len(features_idxs))
+
+    print(build_str)
+
+    # Add no TA data to build string after print because it could be very long and annoying
+    for line in no_ta_array:
+        build_str += "\n" + line  
+
+    # Save the build information in a file
+    with open(build_filename, "w") as f:
+        f.write(build_str)
 
     print(" * Saved TAlist to {}".format(output_filename))
     print(" * Saved TAmap to {}".format(merge_filename))
-    print(" * Saved noTA to {}".format(no_ta_filename))
+    print(" * Saved build info to {}".format(build_filename))
 
     # Make a copy of the genome with the output name
     dst_filename = "data/{}/references/{}.fasta".format(args.experiment, args.output)
