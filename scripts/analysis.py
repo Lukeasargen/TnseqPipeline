@@ -28,26 +28,26 @@ def get_args():
     parser.add_argument('--samples', nargs='+', type=str, required=True,
         help="List read names without the filetype and separated by a space.")
     parser.add_argument('--output', type=str, default="default",
-        help="Output name. Analysis outputs to a folder with this name.")
+        help="Output name. Analysis outputs to a folder with this name. default=default.")
 
     parser.add_argument('--debug', default=False, action='store_true',
-        help="Boolean flag that outputs debugging messages. default=False.")
+        help="Boolean flag that outputs all my debugging messages. default=False.")
     parser.add_argument('--plot', default=False, action='store_true',
         help="Boolean flag that automatically makes a few plots of the data. default=False.")
     parser.add_argument('--gc', default=False, action='store_true',
-        help="Boolean flag that calculates the GC content of each gene. Not used in any test, but saved in the output. default=False.")
+        help="Boolean flag that calculates the GC content of each gene. Not used in any test, but it makes some plots and gets saved in the output. default=False.")
 
     parser.add_argument('--pooling', type=str, default="sum",
         choices=["sum", "average"],
-        help="Sum or average the hits PER GENE to get a merged value for the expression at the gene level. default=sum.")
+        help="String argument. Sum or average the hits PER GENE to get a merged value for the expression at the gene level. default=sum.")
     parser.add_argument('--min_count', default=1, type=int,
-        help="Threshold for lowest number of hits PER GENE after pooling. These genes are not tested for significance and saved in a separate output table. default=1.")
+        help="Integer argument. Threshold for lowest number of hits PER GENE after pooling. Removes genes with low pooled hits. These genes are not tested for significance and saved in a separate output table. default=1.")
     parser.add_argument('--min_inserts', default=2, type=int,
-        help="Threshold for lowest number of insertion sites with hits BY GENE. These genes are not tested for significance and saved in a separate output table. default=2.")
+        help="Integer argument. Threshold for lowest number of insertion sites with hits BY GENE. Removes genes with low TA sites or low hit diversity (diversity=unique hit sites/total gene sites). These genes are not tested for significance and saved in a separate output table. default=2.")
     parser.add_argument('--smoothing', default=1, type=float,
-        help="Smooth the ratio for small counts. ratio=(sample+smoothing)/(control+smoothing). default=1.")
+        help="Float argument. Smooth the ratio for small counts. ratio=(sample+smoothing)/(control+smoothing). default=1.")
     parser.add_argument('--alpha', default=0.05, type=float,
-        help="Significance level. default=0.05.")
+        help="Float argument. Significance level. default=0.05.")
     parser.add_argument('--insert_weighting', default=False, action='store_true',
         help="Boolean flag that scales PER GENE based on unique inserts. It increases the Formula is new_hits=old_hits*(unique_inserts/average_unique_inserts). default=False.")
 
@@ -74,6 +74,7 @@ def pairwise_comparison(args):
     print("Samples :", args.samples)
 
     # Append "_sum" to match the column names in the TAmap and Genehits
+    # this matches the step done in readTAmap.py, where only the "_sum" is merged into the TAmap
     controls = [c+"_sum" for c in args.controls]
     samples = [c+"_sum" for c in args.samples]
     test_columns = controls+samples
@@ -127,9 +128,11 @@ def pairwise_comparison(args):
     if args.insert_weighting:
         """ https://github.com/srimam/TSAS """
         print(" * Calculating insertion weighting (TSAS by Saheed Imam)...")
+        if args.debug: print("\nStats before insertion weighting:"); column_stats(genehits, columns=["Control_Hits","Sample_Hits"])
         avg_unique = (genehits["Control_Unique_Insertions"].mean()+genehits["Sample_Unique_Insertions"].mean()) / 2.0
         genehits["Control_Hits"] = genehits["Control_Hits"] * (genehits["Control_Unique_Insertions"]/avg_unique)
         genehits["Sample_Hits"] = genehits["Sample_Hits"] * (genehits["Sample_Unique_Insertions"]/avg_unique)
+        if args.debug: print("\nStats after insertion weighting:"); column_stats(genehits, columns=["Control_Hits","Sample_Hits"])
 
     # NOTE : Below starts the actual statistical analysis, everything above was just building the table
 
@@ -207,14 +210,13 @@ def pairwise_comparison(args):
             # # gene_name is used to index the full TAmap 
             # # size is used to get the length of the condition array
             gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
-            # if args.debug: print("gene_name :", gene_name)
             df = tamap[tamap["Gene_ID"]==gene_name]
 
             # gene_data = np.array(df[test_columns]).T.reshape(-1)
             # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
             # pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", debug=args.debug)
             
-            data1 = np.array((df[controls].mean(axis=1)))  # Combine control replicates
+            data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
             # u_stat, pvalue = mannwhitneyu(data1, data2)
             t_stat, pvalue = ttest_ind(data1, data2)
@@ -321,7 +323,7 @@ def pairwise_comparison(args):
         plt.hlines(M.median(), xmin=A.min(), xmax=A.max(), color="tab:red", label="Median={:.2f}".format(M.median()))
         plt.hlines(M.mean(), xmin=A.min(), xmax=A.max(), color="tab:blue", label="Mean={:.2f}".format(M.mean()))
         plt.hlines([-1, 1], xmin=A.min(), xmax=A.max(), color="tab:blue", linestyle='dashed')
-        plt.legend()
+        plt.legend(loc="upper left")
         plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
         plt.ylabel("M = log2(sample) - log2(control)")
         fig.tight_layout()

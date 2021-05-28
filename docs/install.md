@@ -51,7 +51,7 @@ Select _QuickEdit_ Mode and _Use Ctrl+Shift+C/V as Copy/Paste_. _QuickEdit_ allo
 
 __Ctrl+Shift+C__ and __Ctrl+Shift+V__ will also be copy and paste.
 
-# Install python, pip, java, and bowtie
+# Install git, python, pip, java, and bowtie
 
 First, update the apt package manager and get current package versions:
 ```
@@ -60,9 +60,24 @@ sudo apt update
 
 You can install everything at once with this command:
 ```
-sudo apt install python3 python3-pip openjdk-11-jdk maven bowtie
+sudo apt install git-all python3 python3-pip openjdk-11-jdk maven bowtie
 ```
 If there are issues, each program can be install separately as shown below.
+
+## Install git
+
+```
+sudo apt install git-all
+```
+
+Verify with:
+```
+git --version
+```
+
+Here is the help message from `git --version`:
+
+![verify_git](/docs/images/verify_git.png)
 
 ## Install python3 and pip
 

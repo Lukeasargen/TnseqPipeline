@@ -10,7 +10,9 @@
 
 First, complete the install instructions on [docs/install.md](docs/install.md).
 
-Then, open a terminal and change directory to the location you want as your workspace. Run this command to clone this repository:
+Everything should now be installed in your terminal you are using to run the analysis. Then, open a terminal and change directory to the location you want as your workspace. 
+
+Run this command to clone this repository:
 
 ```
 git clone https://github.com/Lukeasargen/TnseqPipeline.git
@@ -27,6 +29,7 @@ The project folder will look like this:
 ```
   TnseqPipeline/
   ├── data
+  │   ├── blank - empty folders with the correct structure
   │   ├── demo
   │   |   ├── adapters - removed before alignment, fasta or fa files
   │   |   ├── analysis - genehits tables are output here
@@ -48,6 +51,18 @@ The project folder will look like this:
       └── Trimmomatic-0.36
 ```
 
+# Starting a New Experiment
+
+1. Make a copy of the `blank` folder found in `data` and rename. Choose a short name with no spaces.
+
+```
+cp -a data/blank /data/your_experiment_name
+```
+2. You need a reference genome and genebank. Put these in your new experiment folder in the `references` folder. The genome should be a *.fa or *.fasta and the genebank is a *.gb.
+
+3. Adapters are not required. If you have adapters, put them in the `adapters` folder. These are *.fa or *.fasta files. These are used by Trimmomatic to trim these bases from the raw reads. _If you what to use a different trimming tool, you can put the output files in `reads/processed` and `reads1.sh` will try and bowtie align them. However, to avoid issues, you can just do the alignment manually following the steps for Stage 2 detailed below._
+
+4. Finally, put your sequenced reads in the `reads` folder. These fastq files with extensions *.fq or *.fastq.
 
 # Stage 1 - Process the Reference
 
@@ -150,61 +165,85 @@ This script is documented in place. Nearly every line has a comment explaining w
 
 For now, [analysis.py](scripts/analysis.py) only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization (total counts). Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
 
-There are several arguments. Below are examples of each argument.
+
+
+Here are the essential arguments for getting started:
 
 Display help message
 ```
 python3 scripts/analysis.py -h
 ```
 
-Single reads
+Single reads. This is the minimum required inputs to run a pairwise comparison.
 ```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k
 ```
 
-Biological replicates
+Biological replicates, separated by spaces, no filetype
 ```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c25k c50k --samples s25k s50k
 ```
 
---output = Create a folder in analysis with this name, output here (default="default")
+--output = Create a folder in analysis with this name. This example outputs to a folder called "group1v3".
 ```
 python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --output=group1v3
 ```
 
---plot = Create plots of some metrics
-```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --plot
-```
+There are several other arguments. This is the help message.
 
---gc = Calculates the GC content of each gene 
 ```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --gc
-```
+usage: analysis.py [-h] --experiment EXPERIMENT --index INDEX --controls
+                   CONTROLS [CONTROLS ...] --samples SAMPLES [SAMPLES ...]
+                   [--output OUTPUT] [--debug] [--plot] [--gc]
+                   [--pooling {sum,average}] [--min_count MIN_COUNT]
+                   [--min_inserts MIN_INSERTS] [--smoothing SMOOTHING]
+                   [--alpha ALPHA] [--insert_weighting]
 
---min_count = only use genes that have more counts than this (default=1)
-```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --min_count=1
-```
+Pairwise Comparison (Supports Replicates).
 
---min_inserts = only use genes that have more insertion sites than this (default=2)
-```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --min_inserts=2
-```
-
---smoothing = smooths the ratio for small counts (default=1)
-```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --smoothing=1
-```
-
---alpha = significance level (default=0.05)
-```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --alpha=0.05
-```
-
-You can combine the arguments
-
-Control replicates, GC content, minimum of 10 hits per gene, plot
-```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c25k c50k --samples s50k --gc --min_count=10 --plot
+optional arguments:
+  -h, --help            show this help message and exit
+  --experiment EXPERIMENT
+                        Experiment folder name.
+  --index INDEX         Index name.
+  --controls CONTROLS [CONTROLS ...]
+                        List read names without the filetype and separated by
+                        a space.
+  --samples SAMPLES [SAMPLES ...]
+                        List read names without the filetype and separated by
+                        a space.
+  --output OUTPUT       Output name. Analysis outputs to a folder with this
+                        name. default=default.
+  --debug               Boolean flag that outputs all my debugging messages.
+                        default=False.
+  --plot                Boolean flag that automatically makes a few plots of
+                        the data. default=False.
+  --gc                  Boolean flag that calculates the GC content of each
+                        gene. Not used in any test, but it makes some plots
+                        and gets saved in the output. default=False.
+  --pooling {sum,average}
+                        String argument. Sum or average the hits PER GENE to
+                        get a merged value for the expression at the gene
+                        level. default=sum.
+  --min_count MIN_COUNT
+                        Integer argument. Threshold for lowest number of hits
+                        PER GENE after pooling. Removes genes with low pooled
+                        hits. These genes are not tested for significance and
+                        saved in a separate output table. default=1.
+  --min_inserts MIN_INSERTS
+                        Integer argument. Threshold for lowest number of
+                        insertion sites with hits BY GENE. Removes genes with
+                        low TA sites or low TA diversity (diversity=unique hit
+                        sites/total gene sites). These genes are not tested
+                        for significance and saved in a separate output table.
+                        default=2.
+  --smoothing SMOOTHING
+                        Float argument. Smooth the ratio for small counts.
+                        ratio=(sample+smoothing)/(control+smoothing).
+                        default=1.
+  --alpha ALPHA         Float argument. Significance level. default=0.05.
+  --insert_weighting    Boolean flag that scales PER GENE based on unique
+                        inserts. It increases the Formula is new_hits=old_hits
+                        *(unique_inserts/average_unique_inserts).
+                        default=False.
 ```
