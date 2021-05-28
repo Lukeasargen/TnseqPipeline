@@ -122,11 +122,11 @@ def make_TAmap(args):
     # Load up the full map and merge
     merge_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.index)
     merge = pd.read_csv(merge_filename, delimiter=",")
-    merged = pd.merge(merge, tamap)
-    merged.to_csv(merge_filename, header=True, index=False)
+    merge[f"{read_name}_sum"] = tamap[f"{read_name}_sum"]  # Add or over-write column
+    merge.to_csv(merge_filename, header=True, index=False)
 
     print(" * Creating GeneHits table...")
-    genehits = tamap_to_genehits(merged)
+    genehits = tamap_to_genehits(merge)
     genehits_filename = "data/{}/maps/{}_Genehits.csv".format(args.experiment, args.index)
     print(" * Saving {}".format(genehits_filename))
     genehits.to_csv(genehits_filename, header=True, index=False)
