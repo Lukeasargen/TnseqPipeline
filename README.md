@@ -79,16 +79,19 @@ Outputs:
 ## Create the Bowtie index and TAlist
 
 <!-- Bowtie 1 and Bowtie 2 output different files. Be consistent on which version you use in stage 1 and stage 2. -->
+This is the template for creating the correct reference files:
 ```
-./scripts/reference1.sh -e experiment -f fasta -g gb -o out
+./scripts/reference1.sh -e experiment -f fasta -g gb -o index_name
+```
 
-# Bowtie 1
+Here is the command filled out to run the demo:
+```
 ./scripts/reference1.sh -e demo -f 14028s_chromosome.fasta -g 14028s_genome.gb -o 14028c
 ```
 <!-- # Bowtie 2
 ./scripts/reference2.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c -->
 
-The indexes are output into the indexes folder of your experiment. These files will only be used by bowtie during the alignment step of processing reads.
+The indexes are output into the indexes folder of your experiment. These files will only be used by bowtie during the alignment step of processing reads. The name of these indexes, specified after -o, is used as the index name for the following steps.
 
 ## Notice: The TAlist indicates the location using 1 indexing. This means the first base is labeled 1. For instance, if the gene start is 10, there will be 9 bases before it.
 
@@ -107,10 +110,13 @@ Outputs:
 - TA maps - total alignments for every TA site
 
 <!-- Use the same version of Bowtie as stage 1. -->
+This is the template for processing reads:
 ```
 ./scripts/reads1.sh -e experiment_name -i index_name -a adapters -r reads
+```
 
-# Bowtie 1
+This is a command filled out for the demo. Notice the reads are listed with the filetype extension and separated by a comma.
+```
 ./scripts/reads1.sh -e demo -i 14028c -a PolyC_Adapter.fa -r c25k.fastq,c50k.fastq,s25k.fastq,s50k.fastq
 ```
 
@@ -149,10 +155,11 @@ Here are the default arguments used:
 |||
 |-|-|
 | -t | Prints the duration of the alignment |
-| -v 3 | v mode alignments only check mismatches and ignores quality. There will be at most 3 mismatches. |
-| -a | Report all alignments. |
-| -m 1 | If there are multiple alignments, only report the best one. |
-| --best --strata | Best reports in best-to-worst order. Strata reports reads with the least number mismatches. |
+| -v 3 | v mode alignments only check mismatches and ignores quality. There will be at most 3 mismatches |
+| -a | finds all mapping alignments (doesn’t stop at first hit) |
+| -m 1 | if there are multiple alignments, only report the best one |
+| --best | reports in best-to-worst order |
+| --strata | reports only the best -m matches |
 
 ## 3. Map - Python
 

@@ -149,13 +149,21 @@ def pairwise_comparison(args):
 
     # Fitness
     print(" * Calculating fitness...")
-    # trimmed["Sample_Fitness"] = np.log10( 1 + (trimmed["Sample_Hits"]*12e6/trimmed["Sample_Hits"].sum()) / (1000*trimmed["Gene_Length"]) )
-    # trimmed["Sample_Fitness"] = np.log10( 1000*(1+trimmed["Sample_Hits"])/trimmed["Gene_Length"] )
-
+    # genehits["Sample_Fitness"] = np.log10( 1 + (genehits["Sample_Hits"]*12e6/genehits["Sample_Hits"].sum()) / (1000*genehits["Gene_Length"]) )
+    # genehits["Sample_Fitness"] = np.log10( (1+genehits["Sample_Hits"])/genehits["Gene_Length"] )
     # genehits["Sample_Fitness"] = (np.log(genehits["Sample_Diversity"]) - np.log(genehits["Control_Diversity"])) / (np.log(1-genehits["Sample_Diversity"]) - np.log(1-genehits["Control_Diversity"]))
     # column_stats(genehits, columns=["Sample_Fitness"])
 
-    # Count and Observation thresholding
+
+    # Survival Index
+    print(" * Calculating survival index...")
+    dval_ctl = (genehits["Control_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Control_Hits"].sum())
+    dval_exp = (genehits["Sample_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Sample_Hits"].sum())
+    si = dval_exp/dval_ctl
+    genehits["SI"] = si
+    genehits["Log2SI"] = np.log2(genehits["SI"])
+
+    # Count and Insertion thresholding
     print(" * Trimming away low saturated genes...")
 
     # First, find "possibly essential" genes
@@ -211,6 +219,7 @@ def pairwise_comparison(args):
             # # size is used to get the length of the condition array
             gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
             df = tamap[tamap["Gene_ID"]==gene_name]
+            if args.debug: print("\nStatistical Test for: ", gene_name)
 
             # gene_data = np.array(df[test_columns]).T.reshape(-1)
             # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
@@ -223,6 +232,9 @@ def pairwise_comparison(args):
             # t_stat, pvalue = wilcoxon(data1, data2)
 
             trimmed.loc[i, "P_Value"] = pvalue
+
+            if args.debug: print(trimmed.loc[i])
+            if args.debug and c > 7: break        
         except KeyboardInterrupt:
             break
 
@@ -275,6 +287,8 @@ def pairwise_comparison(args):
         ["Start", "Log2FC_Inserts", None, False, False],
         ["Start", "LinearDiff_Inserts", None, False, False],
         ["Log2FC_Inserts", "LinearDiff_Inserts", None, False, False],
+
+        ["Log2FC_Reads", "Log2SI", None, False, False],
     ]
     if args.gc:
         combine_plots.append(["GC", "Hits", 4, False, True])
@@ -313,6 +327,14 @@ def pairwise_comparison(args):
             fig.tight_layout()
             plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
 
+        hist_plots = ["Log2SI", "Log2FC_Reads", "Log2FC_Inserts"]
+        for col in hist_plots:
+            print("Plotting col={}".format(col))
+            fig = plt.figure(figsize=[12, 8])
+            ax = fig.add_subplot(111)
+            trimmed["Log2SI"].plot.hist(bins=200)
+            plt.xlabel(f"{col}")
+            plt.savefig(f"{output_folder}/{col}_hist.png")
 
         # Make the MA plot
         print("Plotting MA plot")
