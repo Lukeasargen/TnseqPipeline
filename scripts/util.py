@@ -2,7 +2,7 @@ import numpy as np
 from scipy.stats import trim_mean
 
 
-genehits_nonread_headers = 7
+genehits_nonread_headers = 7  # Default is normalize all read data, if no columns are supplied to norm functions
 
 
 def time_to_string(t):
@@ -44,7 +44,7 @@ def tamap_to_genehits(tamap, fasta_filename=None, pooling="sum"):
     # Get all the names by removing the suffix from the column names
     # and making a set (a set has no duplicates)
     # TAmap has 8 non-read headers
-    map_names = set([ n for n in genemap.columns[8:] if n[-3:]=="sum" ])
+    map_names = set([ n for n in genemap.columns[8:] ])
     # Get other gene data into a genehits df
     grouped = genemap.groupby("Gene_ID", as_index=False)
     genehits = grouped.agg({"Start": "first", "End": 'first', "Direction": "first"})
@@ -79,6 +79,15 @@ def tamap_to_genehits(tamap, fasta_filename=None, pooling="sum"):
     Applied to TAmap, but they should work on Genehits tables.
 """
 
+def apply_multiply_factors(table, factors):
+    """ table is a has the count data
+        factors is a dictionary with the correct column names
+    """
+    for k,v in factors.items():
+        table[k] = v*table[k]
+    return table
+
+
 def total_count_norm(genehits, columns=None, debug=False):
     """ Normalize genehits using the total reads. """
     temp = genehits.copy()
@@ -89,11 +98,9 @@ def total_count_norm(genehits, columns=None, debug=False):
         multiply_factor.update({name: temp[name].sum()})
     max_total = max(multiply_factor.values())
     multiply_factor = {k:max_total/v for k,v in multiply_factor.items()}
-    for k,v in multiply_factor.items():
-        temp[k] = v*temp[k]
+    temp = apply_multiply_factors(temp, multiply_factor)
     if debug:
         print("\ntotal_count_norm")
-        print("columns :", columns)
         print("max_total :", max_total)
         print("multiply_factor :", multiply_factor)
     return temp
@@ -109,12 +116,10 @@ def quantile_norm(genehits, q=0.5, columns=None, debug=False):
         multiply_factor.update({name: temp[temp[name]!=0][name].quantile(q=q)})
     max_total = max(multiply_factor.values())
     multiply_factor = {k:max_total/v for k,v in multiply_factor.items()}
-    for k,v in multiply_factor.items():
-        temp[k] = v*temp[k]
+    temp = apply_multiply_factors(temp, multiply_factor)
     if debug:
         print("\nquantile_norm q={}".format(q))
         print("max_total :", max_total)
-        print("columns :", columns)
         print("multiply_factor :", multiply_factor)
     return temp
 
@@ -134,12 +139,10 @@ def ttr_norm(genehits, trim=0.05, columns=None, debug=False):
         multiply_factor.update({name: a*b})
     max_total = max(multiply_factor.values())
     multiply_factor = {k:max_total/v for k,v in multiply_factor.items()}
-    for k,v in multiply_factor.items():
-        temp[k] = v*temp[k]
+    temp = apply_multiply_factors(temp, multiply_factor)
     if debug:
         print("\nttr_norm trim={}".format(trim))
         print("max_total :", max_total)
-        print("columns :", columns)
         print("multiply_factor :", multiply_factor)
     return temp
 
@@ -156,6 +159,7 @@ def gene_length_norm(genehits, columns=None, debug=False):
         temp[name] = (norm_length/lengths)*temp[name]
     if debug:
         print("\ngene_length_norm")
+        print("columns :", columns)
         print("norm_length :", norm_length)
     return temp
 

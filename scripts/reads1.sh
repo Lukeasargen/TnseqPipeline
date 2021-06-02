@@ -99,7 +99,7 @@ do
 
     # Create TA map for the read to the index
     # This will also try to map to a combined TAmap if one exists
-    echo " * Creating TAmap for ${i} and $INDEX..." |& tee -a $out_filename;
+    echo " * Creating TAmap for $INDEX and ${i}..." |& tee -a $out_filename;
     python3 scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=${i} |& tee -a $out_filename;
 
 done

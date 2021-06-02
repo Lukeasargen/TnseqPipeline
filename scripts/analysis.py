@@ -37,6 +37,9 @@ def get_args():
     parser.add_argument('--gc', default=False, action='store_true',
         help="Boolean flag that calculates the GC content of each gene. Not used in any test, but it makes some plots and gets saved in the output. default=False.")
 
+    parser.add_argument('--strand', type=str, default="both",
+        choices=["both", "forward", "reverse"],
+        help="String argument. Use this specified strand for analysis. default=both.")
     parser.add_argument('--pooling', type=str, default="sum",
         choices=["sum", "average"],
         help="String argument. Sum or average the hits PER GENE to get a merged value for the expression at the gene level. default=sum.")
@@ -73,10 +76,9 @@ def pairwise_comparison(args):
     print("Controls :", args.controls)
     print("Samples :", args.samples)
 
-    # Append "_sum" to match the column names in the TAmap and Genehits
-    # this matches the step done in readTAmap.py, where only the "_sum" is merged into the TAmap
-    controls = [c+"_sum" for c in args.controls]
-    samples = [c+"_sum" for c in args.samples]
+    # Append "_"+args.strand to match the column names in the TAmap and Genehits
+    controls = [c+"_"+str(args.strand) for c in args.controls]
+    samples = [c+"_"+str(args.strand) for c in args.samples]
     test_columns = controls+samples
 
     # Load the tamap 
@@ -161,6 +163,8 @@ def pairwise_comparison(args):
     dval_exp = (genehits["Sample_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Sample_Hits"].sum())
     si = dval_exp/dval_ctl
     genehits["SI"] = si
+    # This will throw an error if there are 0 sample hits, but whatever
+    # numpy is good at handling errors, log2(0)=-inf
     genehits["Log2SI"] = np.log2(genehits["SI"])
 
     # Count and Insertion thresholding
@@ -223,7 +227,7 @@ def pairwise_comparison(args):
 
             # gene_data = np.array(df[test_columns]).T.reshape(-1)
             # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
-            # pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", debug=args.debug)
+            # pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", rescale=0, debug=args.debug)
             
             data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
@@ -234,7 +238,7 @@ def pairwise_comparison(args):
             trimmed.loc[i, "P_Value"] = pvalue
 
             if args.debug: print(trimmed.loc[i])
-            if args.debug and c > 7: break        
+            if args.debug and c > 5: break        
         except KeyboardInterrupt:
             break
 
@@ -243,7 +247,7 @@ def pairwise_comparison(args):
     remaining = duration/c * (len(trimmed)-c)
     print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c, len(trimmed), c/duration, time_to_string(duration), time_to_string(remaining)))
 
-
+    # Make a boolean column for the P-value and a negative log10 for the volcano plot
     trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<args.alpha, trimmed["P_Value"]!=0)
     trimmed["Log10P"] = -np.log10(trimmed["P_Value"])
     sig_genes = trimmed["P_Sig"].sum()
@@ -251,6 +255,7 @@ def pairwise_comparison(args):
     print("Genes not tested : {}".format(np.sum(np.isnan(trimmed["P_Value"]))))
     print("Test failures : {}".format(np.sum(trimmed["P_Value"]==0)))
    
+    # The same as above but for adjusted Q-values
     print(" * Adjusting p-values for multiple test...")
     trimmed["Q_Value"] = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
     trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<args.alpha, trimmed["Q_Value"]!=0)
