@@ -97,12 +97,19 @@ def pairwise_comparison(args):
     print(" * Compressing TAmap into Genehits table...")
     fasta_filename = "data/{}/references/{}.fasta".format(args.experiment, args.index) if args.gc else None
     if args.debug: print(f"GC content fasta filename : {fasta_filename}")
-    genehits = tamap_to_genehits(tamap, fasta_filename=fasta_filename, pooling=args.pooling)
 
     # Combine the replicates, average the counts
     print(" * Combining replicates...")
-    genehits["Control_Hits"] = genehits[controls].mean(axis=1)
-    genehits["Sample_Hits"] = genehits[samples].mean(axis=1)
+    tamap["Control_Hits"] = tamap[controls].mean(axis=1)
+    tamap["Sample_Hits"] = tamap[samples].mean(axis=1)
+
+    print(" * Merging into genehits table...")
+    # NOTE : This function removes intergenic regions
+    # This might mess up the normalization totals, but this is likely fine
+    # since the normalization above accounts for sequencing depth of the entire
+    # library and not just for the gene regions.
+    genehits = tamap_to_genehits(tamap, fasta_filename=fasta_filename, pooling=args.pooling)
+
     column_stats(genehits, columns=["Control_Hits", "Sample_Hits"])
 
     # NOTE : Pairwise analysis below
@@ -151,24 +158,36 @@ def pairwise_comparison(args):
 
     # Fitness
     print(" * Calculating fitness...")
-    # genehits["Sample_Fitness"] = np.log10( 1 + (genehits["Sample_Hits"]*12e6/genehits["Sample_Hits"].sum()) / (1000*genehits["Gene_Length"]) )
-    # genehits["Sample_Fitness"] = np.log10( (1+genehits["Sample_Hits"])/genehits["Gene_Length"] )
-    # genehits["Sample_Fitness"] = (np.log(genehits["Sample_Diversity"]) - np.log(genehits["Control_Diversity"])) / (np.log(1-genehits["Sample_Diversity"]) - np.log(1-genehits["Control_Diversity"]))
-    # column_stats(genehits, columns=["Sample_Fitness"])
-
+    # This is an arbitrary value taken from vanOpijnenLab source code
+    # https://github.com/vanOpijnenLab/MAGenTA/blob/master/tools/galaxy/Calculate%20Fitnesses/calc_fitness.py#L67-L70
+    expansion_factor = 250
+    # Copy the columns so the original table is not changed
+    df = pd.DataFrame()
+    df[["Control_Hits", "Sample_Hits"]] = tamap[["Control_Hits", "Sample_Hits"]]
+    # Re adjust the table to with the same behavior as vanOpijnenLab "correction factors"
+    # "Total Counts" effectively makes the columns have the same sum, which is identical to the vanOpijnenLab procedure
+    df = total_count_norm(df, columns=["Control_Hits", "Sample_Hits"], debug=args.debug)
+    # I'm pretty sure frequency is just the site counts over total conts
+    df["contrl_freq"] = df["Control_Hits"] / df["Control_Hits"].sum()
+    df["sample_freq"] = df["Sample_Hits"] / df["Sample_Hits"].sum()
+    # This is the formula from (Nature 2009) Opijnen Online Methods
+    df["Sample_Fitness"] = np.log(expansion_factor*(df["sample_freq"])/(df["contrl_freq"])) / np.log(expansion_factor*(1-df["sample_freq"])/(1-df["contrl_freq"]))
+    genehits["Sample_Fitness"] = df["Sample_Fitness"]
+    genehits["Log2Fitness"] = np.log2(genehits["Sample_Fitness"])
 
     # Survival Index
     print(" * Calculating survival index...")
+    # "Genetic basis of persister tolerance to aminoglycosides (2015) Shan...Lewis"
     dval_ctl = (genehits["Control_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Control_Hits"].sum())
     dval_exp = (genehits["Sample_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Sample_Hits"].sum())
     si = dval_exp/dval_ctl
-    genehits["SI"] = si
+    genehits["Survival_Index"] = si
     # This will throw an error if there are 0 sample hits, but whatever
     # numpy is good at handling errors, log2(0)=-inf
-    genehits["Log2SI"] = np.log2(genehits["SI"])
+    genehits["Log2SI"] = np.log2(genehits["Survival_Index"])
 
     # Count and Insertion thresholding
-    print(" * Trimming away low saturated genes...")
+    print(" * Finding possibly essential genes...")
 
     # First, find "possibly essential" genes
     # TODO : citation. Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms
@@ -179,6 +198,9 @@ def pairwise_comparison(args):
     # Save the possibly essential genes
     print(" * Saved possibly essential genes to {}".format(possibly_filename))
     genehits[possibly].to_csv(possibly_filename, header=True, index=False)
+
+    # Count and Insertion thresholding
+    print(" * Trimming away low saturated genes by thresholds...")
 
     # This bool saves whether the gene has counts in all groups
     hit_bool = ~(genehits[["Control_Unique_Insertions", "Sample_Unique_Insertions"]] == 0).any(axis=1)
@@ -232,8 +254,8 @@ def pairwise_comparison(args):
             data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
             # u_stat, pvalue = mannwhitneyu(data1, data2)
-            t_stat, pvalue = ttest_ind(data1, data2)
-            # t_stat, pvalue = wilcoxon(data1, data2)
+            # t_stat, pvalue = ttest_ind(data1, data2)
+            t_stat, pvalue = wilcoxon(data1, data2)
 
             trimmed.loc[i, "P_Value"] = pvalue
 
@@ -292,12 +314,24 @@ def pairwise_comparison(args):
         ["Start", "Log2FC_Inserts", None, False, False],
         ["Start", "LinearDiff_Inserts", None, False, False],
         ["Log2FC_Inserts", "LinearDiff_Inserts", None, False, False],
-
+        # Survival Index
+        ["Start", "Log2SI", None, False, False],
         ["Log2FC_Reads", "Log2SI", None, False, False],
+        # Fitness
+        ["Start", "Sample_Fitness", None, False, False],
+        ["Log2FC_Reads", "Sample_Fitness", None, False, False],
+        ["Start", "Log2Fitness", None, False, False],
+        ["Log2FC_Reads", "Log2Fitness", None, False, False],
     ]
     if args.gc:
         combine_plots.append(["GC", "Hits", 4, False, True])
         single_plots.append(["Start", "GC", None, False, False])
+
+    hist_plots = ["Log2SI",
+        "Log2FC_Reads",
+        "Log2FC_Inserts",
+        "Sample_Fitness"
+    ]
 
     colors = {False:'tab:green', True:'tab:red'}
     p_sig_colors = trimmed["P_Sig"].map(colors)
@@ -317,6 +351,7 @@ def pairwise_comparison(args):
             plt.legend()
             fig.tight_layout()
             plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
+            plt.close(fig)
 
         for x, y, s, xlog, ylog in single_plots:
             print("Plotting x={} y={}".format(x, y))
@@ -331,15 +366,16 @@ def pairwise_comparison(args):
             if ylog: ax.set_yscale('log')
             fig.tight_layout()
             plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
+            plt.close(fig)
 
-        hist_plots = ["Log2SI", "Log2FC_Reads", "Log2FC_Inserts"]
         for col in hist_plots:
             print("Plotting col={}".format(col))
             fig = plt.figure(figsize=[12, 8])
             ax = fig.add_subplot(111)
-            trimmed["Log2SI"].plot.hist(bins=200)
+            trimmed[col].plot.hist(bins=200)
             plt.xlabel(f"{col}")
             plt.savefig(f"{output_folder}/{col}_hist.png")
+            plt.close(fig)
 
         # Make the MA plot
         print("Plotting MA plot")
@@ -355,6 +391,7 @@ def pairwise_comparison(args):
         plt.ylabel("M = log2(sample) - log2(control)")
         fig.tight_layout()
         plt.savefig(f"{output_folder}/MA_Plot.png")
+        plt.close(fig)
 
 
         # Make the volcano plot
@@ -371,6 +408,7 @@ def pairwise_comparison(args):
         plt.savefig(f"{output_folder}/Volcano_Plot.png")
         plt.ylim(Y.min(), min(4, Y.max()))
         plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
+        plt.close(fig)
 
 
 
