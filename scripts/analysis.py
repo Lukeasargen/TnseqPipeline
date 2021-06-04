@@ -15,7 +15,7 @@ from util import exclude_sites_tamap
 from util import bh_procedure
 from util import time_to_string
 
-from zinb_glm import zinb_glm_llr_test
+from zinb_glm import zinb_test
 
 
 def get_args():
@@ -134,6 +134,8 @@ def pairwise_comparison(args):
 
     # Combine the replicates, average the counts
     print(" * Combining replicates...")
+    tamap["Control_Hits"] = tamap[controls].mean(axis=1)
+    tamap["Sample_Hits"] = tamap[samples].mean(axis=1)
     genehits["Control_Hits"] = genehits[controls].mean(axis=1)
     genehits["Sample_Hits"] = genehits[samples].mean(axis=1)
     column_stats(genehits, columns=["Control_Hits", "Sample_Hits"])
@@ -283,7 +285,7 @@ def pairwise_comparison(args):
 
             # gene_data = np.array(df[test_columns]).T.reshape(-1)
             # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
-            # pvalue = zinb_glm_llr_test(gene_data, conditions, dist="nb", rescale=0, debug=args.debug)
+            # pvalue = zinb_test(gene_data, conditions, dist="nb", rescale=0, debug=args.debug)
             
             data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
@@ -309,7 +311,8 @@ def pairwise_comparison(args):
     sig_genes = trimmed["P_Sig"].sum()
     print("Significant p-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
     print("Genes not tested : {}".format(np.sum(np.isnan(trimmed["P_Value"]))))
-    print("Test failures : {}".format(np.sum(trimmed["P_Value"]==0)))
+    fails = np.sum(trimmed["P_Value"]==0)
+    print("Test failures : {} ({:.2f}%)".format(fails, 100*fails/len(trimmed)))
    
     # The same as above but for adjusted Q-values
     print(" * Adjusting p-values for multiple test...")
@@ -437,9 +440,9 @@ def pairwise_comparison(args):
         plt.xlabel("log2 fold Change")
         plt.ylabel("-log10(p-value)")
         fig.tight_layout()
-        plt.ylim(Y.min(), Y.max())
+        plt.ylim(max(0, Y.min()), Y.max())
         plt.savefig(f"{output_folder}/Volcano_Plot.png")
-        plt.ylim(Y.min(), min(4, Y.max()))
+        plt.ylim(max(0, Y.min()), min(4, Y.max()))
         plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
         plt.close(fig)
 

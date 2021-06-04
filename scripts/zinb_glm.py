@@ -113,6 +113,7 @@ the given degrees of freedom.
 import time
 
 import numpy as np
+from numpy.lib.financial import pv
 from scipy.optimize import minimize
 from  scipy.stats import nbinom, norm, chi2
 
@@ -177,7 +178,6 @@ def nll_glm(params, y, conditions, dist="nb"):
     n_reads = np.nan_to_num(np.log(n_reads + eps))
     y_reads = np.nan_to_num(np.log(y_reads + eps))
     nll = -(np.sum(n_reads) + np.sum(y_reads))
-    # print("{:.50f}".format(nll))
     return nll
 
 
@@ -186,7 +186,7 @@ def glm_fit(data, conditions, dist="nb", debug=False):
         There are some hard-code initial values in this function.
     """
     # Scipy function requires integers
-    # rint converts to hte nearest integer
+    # np.rint converts to the nearest integer
     data = np.rint(np.array(data)).astype(np.int)
     k = num_conditions(conditions)  # k conditions
     # Pack the parameters into a list, required for scipy.optimize
@@ -194,17 +194,23 @@ def glm_fit(data, conditions, dist="nb", debug=False):
     nz_mean = np.mean(data[data>0])
     pg = np.log(nz_mean)  # coefficient for r/n
     ag = np.log(nz_mean)  # coefficient for finding mean
-    init_pi = 0.001  # extraneous probability
+    # Initialization extraneous probability
+    init_pi = 0.000001  # initial extraneous probability 
     yg = np.log(init_pi/(1-init_pi))  # coefficient for pi
     params = np.array([pg] + k*[ag] + k*[yg])
+    # Using scipy.minimize throws erros without using bounds
+    # These are some upper and lower bounds that I found to not give errors
     eps = 1e-7  # using zero gives warnings, so this is a small epsilon value
     upper_n = np.log(1e12)  # highest dispersion is 1e12, avoids overflows in gamln in the nbinom.pmf
     upper_exp = np.log(np.finfo(float).max) - 10  # largest value that np.exp() can use, minus 10 avoids most overflows
-    y = 1.0-np.finfo(float).eps  # highest probabilty possible
-    upper_sigmoid = np.log(y/(1-y))  # highest value of sigmoid
+    upper_pi = 1.0-np.finfo(float).eps  # highest probabilty possible, 1-epsilon
+    upper_sigmoid = np.log(upper_pi/(1-upper_pi))  # highest value of sigmoid
     #          n>0               pi(sigmoid)                 mu(exp)
     bounds = [(eps, upper_n)] + k*[(None, upper_sigmoid)] + k*[(None, upper_exp)]
-    results = minimize(nll_glm, params, args=(data, conditions, dist), bounds=bounds)
+    method = "L-BFGS-B"  # Recommended for bounded optimization
+    options = {"ftol":1e-9, "gtol": 1e-8, "eps": 1e-8}  # TODO : tried lowering these, no much change, rescaling helped more
+    results = minimize(nll_glm, params, args=(data, conditions, dist), bounds=bounds,
+                        method=method, options=options)
     # Unpack the paramters and copmute the estimated distribution parameters
     params = results.x
     pg = params[0]
@@ -220,11 +226,11 @@ def glm_fit(data, conditions, dist="nb", debug=False):
     return params
 
 
-def zinb_glm_llr_test(data, conditions, dist="nb", rescale=0, debug=False):
+def zinb_glm_llr(data, conditions, dist="nb", rescale=0, debug=False):
     """ Compute the Likelihood ratio test on the ZINB-GLM model """
     conditions1 = np.array(conditions)
     conditions0 = [0]*len(conditions1)
-    if debug: print(" data :", data)
+    if debug: print(" data :", np.rint(np.array(data)))
     if rescale>0:
         data = (rescale/np.mean(data[data>0])) * data
         data = np.rint(np.array(data)).astype(np.int)
@@ -243,9 +249,32 @@ def zinb_glm_llr_test(data, conditions, dist="nb", rescale=0, debug=False):
     # pvalue is the probability that we get this llr or higher for the given degrees of freedom
     pvalue = chi2.pdf(x=llr, df=delta_df)
     if debug:
+        s1, s2 = np.split(data, 2)
+        print("split    mean :", np.mean(s1), np.mean(s2))
+        print("split nz mean :", np.mean(s1[s1>0]), np.mean(s2[s2>0]))
         print("mean={:.2f}. non-zero mean={:.2f}".format(np.mean(data), np.mean(data[data>0])))
-        print("l0={:.6f}. l1={:.6f}. llr={:.6f}. ".format(l0, l1, llr))
-        print("df={}. pvalue={:.12f}\n".format(delta_df, pvalue))
+        print("l0={:e}. l1={:e}. llr={:e}. ".format(l0, l1, llr))
+        print("df={}. pvalue={:e}\n".format(delta_df, pvalue))
+    return pvalue
+
+
+def zinb_test(data, conditions, dist="nb", rescale=0, debug=False):
+    """ Perform the ZINB-GLM test with rescaling """
+    # Here is the likelihood ratio test (LRT)
+    pvalue = zinb_glm_llr(data, conditions, dist, rescale, debug=debug)
+    """
+    If the test fails, try again with rescaled data.
+    These values are arbitrary scaling factors.
+    I assume this is an ok operation because when normalizing the
+    values are scaled by multiplication, so why not do it here.
+    My first thought is magnitude shouldn't matter, but I'm not
+    sure since this a
+    """
+    scale = rescale
+    while pvalue in [0, 0.5] and scale < 1000:
+        scale += 50
+        pvalue = zinb_glm_llr(data, conditions, dist, rescale=scale, debug=debug)
+    if debug: print("Scale :", scale)
     return pvalue
 
 
@@ -273,16 +302,21 @@ def zinb_glm_llr_full_test(data, conditions, dist="nb", rescale=0, debug=False):
             pvalues[i,:] = np.nan
             continue
 
-        # Here is the likelihood ratio test (LRT)
-        pvalue = zinb_glm_llr_test(row_data, conditions, dist, rescale, debug)
+        if np.count_nonzero(row_data)<4:
+            pvalues[i,:] = np.nan
+            continue
 
-        # TODO : check for errors in llr and pvalue
+        # Here is the likelihood ratio test (LRT)
+        # pvalue = zinb_glm_llr(row_data, conditions, dist, rescale, debug=debug)
+
+        # Here is the test with rescaling
+        pvalue = zinb_test(row_data, conditions, dist, rescale, debug=debug)
 
         # Sort the pvalue in the array
         pvalues[i,:] = pvalue
 
         # leave early for debugging
-        if i > 100 and debug:
+        if i > 5 and debug:
             break
 
     return pvalues
@@ -291,12 +325,12 @@ def zinb_glm_llr_full_test(data, conditions, dist="nb", rescale=0, debug=False):
 if __name__ == "__main__":
 
     debug = True
-    ta_sites = 7
-    saturation = 0.5
-    num_genes = 4
+    ta_sites = 200
+    saturation = 0.3
+    num_genes = 100
     min_count = 1
     max_count = 10
-    factor = 100
+    factor = 1000
     rescale = 0
     dist = "nb"
 
@@ -312,24 +346,32 @@ if __name__ == "__main__":
     data = data + data*conditions*1.0
     data = data.astype(np.int)
 
-    # conditions = [0, 0, 1, 1]
-    # data = np.array( [
-    #     # [11400, 11200],
-    #     # [142100, 142200],
-    #     # [102400, 108200],
-    #     # [0, 0],
-    #     [200, 250, 300, 350],
-    #     [2000, 2500, 3000, 3500],
-    #     [20000, 25000, 30000, 35000],
-    # ] )
+    conditions = [0, 0, 0, 0, 1, 1, 1, 1]
+    data = np.array( [
+        [    0,  6959,  3473,     0,  2859, 23979, 22260,     0],
+        [    0,     0,  1191,     0, 21981,  3570,  4227,     0],
+        [    0,     0,  8641,  9077, 13916, 10370,     0,     0],
+    ] )
 
     pvalues = zinb_glm_llr_full_test(data, conditions, dist=dist, rescale=rescale, debug=debug)
     pvalues = np.squeeze(pvalues)
 
     sig_bool = pvalues<0.05
 
+    no_test = np.sum(np.isnan(pvalues))
+    print("No Test = {} ({:.2f}%)".format(no_test, 100*no_test/len(pvalues)))
+
+    fails = np.sum(pvalues==0)
+    print("Fails = {} ({:.2f}%)".format(fails, 100*fails/len(pvalues)))
+
+    # exit()
+
     for i in range(len(data)):
         # print(data[i], sig_bool[i], pvalues[i])
         print(i, sig_bool[i], pvalues[i])
         if pvalues[i]==0:
             print(data[i])
+            s1, s2 = np.split(data[i], 2)
+            print("split    mean :", np.mean(s1), np.mean(s2))
+            print("split nz mean :", np.mean(s1[s1>0]), np.mean(s2[s2>0]))
+            print("mean={:.2f}. non-zero mean={:.2f}".format(np.mean(data[i]), np.mean(data[i][data[i]>0])))

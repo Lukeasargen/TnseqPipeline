@@ -170,8 +170,7 @@ This script is documented in place. Nearly every line has a comment explaining w
 
 # Stage 3 - Analysis
 
-For now, [analysis.py](scripts/analysis.py) only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization (total counts). Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
-
+For now, [analysis.py](scripts/analysis.py) only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization (default is trimmed total reads with 5% of the highest and lowest values removed). Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
 
 
 Here are the essential arguments for getting started:
