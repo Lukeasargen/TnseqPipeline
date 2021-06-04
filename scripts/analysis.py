@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 from scipy.stats import mannwhitneyu, ttest_ind, wilcoxon
 
 from util import tamap_to_genehits, column_stats
-from util import total_count_norm, quantile_norm, gene_length_norm
-from util import ttr_norm
+from util import total_count_norm, quantile_norm, gene_length_norm, ttr_norm
+from util import exclude_sites_tamap
 from util import bh_procedure
 from util import time_to_string
 
@@ -29,32 +29,42 @@ def get_args():
         help="List read names without the filetype and separated by a space.")
     parser.add_argument('--output', type=str, default="default",
         help="Output name. Analysis outputs to a folder with this name. default=default.")
-
     parser.add_argument('--debug', default=False, action='store_true',
         help="Boolean flag that outputs all my debugging messages. default=False.")
     parser.add_argument('--plot', default=False, action='store_true',
         help="Boolean flag that automatically makes a few plots of the data. default=False.")
-    parser.add_argument('--gc', default=False, action='store_true',
-        help="Boolean flag that calculates the GC content of each gene. Not used in any test, but it makes some plots and gets saved in the output. default=False.")
-
     parser.add_argument('--strand', type=str, default="both",
         choices=["both", "forward", "reverse"],
         help="String argument. Use this specified strand for analysis. default=both.")
-    parser.add_argument('--pooling', type=str, default="sum",
-        choices=["sum", "average"],
-        help="String argument. Sum or average the hits PER GENE to get a merged value for the expression at the gene level. default=sum.")
+    parser.add_argument('--alpha', default=0.05, type=float,
+        help="Float argument. Significance level. default=0.05.")
     parser.add_argument('--min_count', default=1, type=int,
         help="Integer argument. Threshold for lowest number of hits PER GENE after pooling. Removes genes with low pooled hits. These genes are not tested for significance and saved in a separate output table. default=1.")
     parser.add_argument('--min_inserts', default=2, type=int,
-        help="Integer argument. Threshold for lowest number of insertion sites with hits BY GENE. Removes genes with low TA sites or low hit diversity (diversity=unique hit sites/total gene sites). These genes are not tested for significance and saved in a separate output table. default=2.")
+        help="Integer argument. Threshold for lowest number of insertion sites with hits BY GENE. Removes genes with low hit diversity (unique insertion sites). These genes are not tested for significance and saved in a separate output table. default=2.")
+    parser.add_argument('--min_sites', default=0, type=int,
+        help="Integer argument. Threshold for lowest number of insertion sites with hits BY GENE. Removes genes with low TA sites (TA_Count < min_sites). These genes are not tested for significance and saved in a separate output table. default=0.")
+    parser.add_argument('--pooling', type=str, default="sum",
+        choices=["sum", "average"],
+        help="String argument. Sum or average the hits PER GENE to get a merged value for the expression at the gene level. default=sum.")
     parser.add_argument('--smoothing', default=1, type=float,
         help="Float argument. Smooth the ratio for small counts. ratio=(sample+smoothing)/(control+smoothing). default=1.")
-    parser.add_argument('--alpha', default=0.05, type=float,
-        help="Float argument. Significance level. default=0.05.")
+    parser.add_argument('--expansion', default=250, type=float,
+        help="Float argument. Expansion factor used in the fitness formula described by Opijnen (Nature 2009). default=250.")
     parser.add_argument('--insert_weighting', default=False, action='store_true',
-        help="Boolean flag that scales PER GENE based on unique inserts. It increases the Formula is new_hits=old_hits*(unique_inserts/average_unique_inserts). default=False.")
+        help="Boolean flag that scales PER GENE based on unique inserts. The Formula is new_hits=old_hits*(unique_inserts/average_unique_inserts). default=False.")
+    parser.add_argument('--gc', default=False, action='store_true',
+        help="Boolean flag that calculates the GC content of each gene. Not used in any test, but it makes some plots and gets saved in the output. default=False.")
+    parser.add_argument('--ef', "--exclude_first", default=0, type=float, dest="exclude_first",
+        help="Float argument. Exclude insertions in the first X percent of the gene. default=0.")
+    parser.add_argument('--el', "--exclude_last", default=0, type=float, dest="exclude_last",
+        help="Float argument. Exclude insertions in the last X percent of the gene. default=0.")
 
     args = parser.parse_args()
+
+    if args.expansion <= 0:
+        raise argparse.ArgumentTypeError("%s is an invalid expansion factor." % args.expansion)
+
     return args
 
 
@@ -98,10 +108,8 @@ def pairwise_comparison(args):
     fasta_filename = "data/{}/references/{}.fasta".format(args.experiment, args.index) if args.gc else None
     if args.debug: print(f"GC content fasta filename : {fasta_filename}")
 
-    # Combine the replicates, average the counts
-    print(" * Combining replicates...")
-    tamap["Control_Hits"] = tamap[controls].mean(axis=1)
-    tamap["Sample_Hits"] = tamap[samples].mean(axis=1)
+    # Removes sites that are in the first or last percentage of a gene
+    tamap = exclude_sites_tamap(tamap, exclude_first=args.exclude_first, exclude_last=args.exclude_last)
 
     print(" * Merging into genehits table...")
     # NOTE : This function removes intergenic regions
@@ -110,6 +118,10 @@ def pairwise_comparison(args):
     # library and not just for the gene regions.
     genehits = tamap_to_genehits(tamap, fasta_filename=fasta_filename, pooling=args.pooling)
 
+    # Combine the replicates, average the counts
+    print(" * Combining replicates...")
+    genehits["Control_Hits"] = genehits[controls].mean(axis=1)
+    genehits["Sample_Hits"] = genehits[samples].mean(axis=1)
     column_stats(genehits, columns=["Control_Hits", "Sample_Hits"])
 
     # NOTE : Pairwise analysis below
@@ -136,7 +148,7 @@ def pairwise_comparison(args):
     # TSAS Weighting
     if args.insert_weighting:
         """ https://github.com/srimam/TSAS """
-        print(" * Calculating insertion weighting (TSAS by Saheed Imam)...")
+        print(" * Calculating insertion weighting (Idea from : TSAS by Saheed Imam)...")
         if args.debug: print("\nStats before insertion weighting:"); column_stats(genehits, columns=["Control_Hits","Sample_Hits"])
         avg_unique = (genehits["Control_Unique_Insertions"].mean()+genehits["Sample_Unique_Insertions"].mean()) / 2.0
         genehits["Control_Hits"] = genehits["Control_Hits"] * (genehits["Control_Unique_Insertions"]/avg_unique)
@@ -156,42 +168,47 @@ def pairwise_comparison(args):
     genehits["LinearDiff_Inserts"] = genehits["Sample_Unique_Insertions"] - genehits["Control_Unique_Insertions"]
 
 
-    # Fitness
     print(" * Calculating fitness...")
-    # This is an arbitrary value taken from vanOpijnenLab source code
-    # https://github.com/vanOpijnenLab/MAGenTA/blob/master/tools/galaxy/Calculate%20Fitnesses/calc_fitness.py#L67-L70
-    expansion_factor = 250
+    """
+    Idea from : "Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms"
+    As far as I can tell, expansion factor (args.expansion) is an arbitrary value.
+    I explored it's effects on the fitness formula in desmos.
+    Formula = fitness = ln(ef*(sf)/(cf)) / ln(ef*(1-sf)/(1-cf))
+    where sf=sample frequency(t2), cf=control frequency(t1), and ef=expansion factor.
+    Changing expansion factor appears to change the steepness of the slope
+    around the neutral value. Larger expansion, smaller slope.
+    """
     # Copy the columns so the original table is not changed
     df = pd.DataFrame()
-    df[["Control_Hits", "Sample_Hits"]] = tamap[["Control_Hits", "Sample_Hits"]]
+    df[["Control_Hits", "Sample_Hits"]] = genehits[["Control_Hits", "Sample_Hits"]]
     # Re adjust the table to with the same behavior as vanOpijnenLab "correction factors"
     # "Total Counts" effectively makes the columns have the same sum, which is identical to the vanOpijnenLab procedure
     df = total_count_norm(df, columns=["Control_Hits", "Sample_Hits"], debug=args.debug)
     # I'm pretty sure frequency is just the site counts over total conts
-    df["contrl_freq"] = df["Control_Hits"] / df["Control_Hits"].sum()
-    df["sample_freq"] = df["Sample_Hits"] / df["Sample_Hits"].sum()
-    # This is the formula from (Nature 2009) Opijnen Online Methods
-    df["Sample_Fitness"] = np.log(expansion_factor*(df["sample_freq"])/(df["contrl_freq"])) / np.log(expansion_factor*(1-df["sample_freq"])/(1-df["contrl_freq"]))
+    df["contrl_freq"] = df["Control_Hits"] / genehits["Control_Hits"].sum()
+    df["sample_freq"] = df["Sample_Hits"] / genehits["Sample_Hits"].sum()
+    # This is the formula from Opijnen (Nature 2009) Online Methods
+    df["Sample_Fitness"] = np.log(args.expansion*(df["sample_freq"])/(df["contrl_freq"])) / np.log(args.expansion*(1-df["sample_freq"])/(1-df["contrl_freq"]))
     genehits["Sample_Fitness"] = df["Sample_Fitness"]
     genehits["Log2Fitness"] = np.log2(genehits["Sample_Fitness"])
 
     # Survival Index
     print(" * Calculating survival index...")
-    # "Genetic basis of persister tolerance to aminoglycosides (2015) Shan...Lewis"
+    # Idea from : "Genetic basis of persister tolerance to aminoglycosides (2015) Shan...Lewis"
     dval_ctl = (genehits["Control_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Control_Hits"].sum())
     dval_exp = (genehits["Sample_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Sample_Hits"].sum())
     si = dval_exp/dval_ctl
+    # This is equivalent to above
+    # si = (genehits["Sample_Hits"]*genehits["Control_Hits"].sum())/(genehits["Control_Hits"]*genehits["Sample_Hits"].sum())
     genehits["Survival_Index"] = si
     # This will throw an error if there are 0 sample hits, but whatever
     # numpy is good at handling errors, log2(0)=-inf
     genehits["Log2SI"] = np.log2(genehits["Survival_Index"])
 
-    # Count and Insertion thresholding
-    print(" * Finding possibly essential genes...")
-
     # First, find "possibly essential" genes
-    # TODO : citation. Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms
-    possibly = (genehits[["Control_Unique_Insertions","Sample_Unique_Insertions"]] < 3).any(axis=1) & (genehits["Gene_Length"] >= 400)
+    print(" * Finding possibly essential genes...")
+    # Idea from: "Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms"
+    possibly = (genehits[["Sample_Unique_Insertions"]] < 3).any(axis=1) & (genehits["Gene_Length"] >= 400)
     possibly_filename = "{}/possibly_essential.csv".format(output_folder)
     print("{}/{}({:.2f}%) possibly essential genes.".format( possibly.sum(), len(genehits), 100*possibly.sum()/len(genehits) ) )
 
@@ -205,19 +222,23 @@ def pairwise_comparison(args):
     # This bool saves whether the gene has counts in all groups
     hit_bool = ~(genehits[["Control_Unique_Insertions", "Sample_Unique_Insertions"]] == 0).any(axis=1)
     num_hit = hit_bool.sum()
-    print("{}/{}({:.2f}%) had no hits in one group. {}/{}({:.2f}%) had at least one hit in all groups.".format( len(genehits)-num_hit, len(genehits), 100*(len(genehits)-num_hit)/len(genehits), num_hit, len(genehits), 100*num_hit/len(genehits) ))
+    print("{}/{}({:.2f}%) had no insertions. {}/{}({:.2f}%) had at least one insertion.".format( len(genehits)-num_hit, len(genehits), 100*(len(genehits)-num_hit)/len(genehits), num_hit, len(genehits), 100*num_hit/len(genehits) ))
 
     # Save genes that had no insertions in at least one group
     no_hit_filename = "{}/no_hits.csv".format(output_folder)
     print(" * Saved genes with no hits to {}".format(no_hit_filename))
     genehits[~hit_bool].to_csv(no_hit_filename, header=True, index=False)
 
-    # This bool saves the user defined thresholds
-    keep = (genehits[["Control_Hits","Sample_Hits"]] >= args.min_count).all(axis=1) & (genehits[["Control_Unique_Insertions","Sample_Unique_Insertions"]] >= args.min_inserts).all(axis=1)
+    # Create boolean columns for user defined thresholds
+    keep_count = (genehits[["Control_Hits","Sample_Hits"]] >= args.min_count).all(axis=1)
+    keep_inserts = (genehits[["Control_Unique_Insertions","Sample_Unique_Insertions"]] >= args.min_inserts).all(axis=1)
+    keep_sites = (genehits["TA_Count"] >= args.min_sites)
+    keep = keep_count & keep_inserts & keep_sites
     # Separate the genes that will be tested from the rest
+    # TODO : does this need to be copied, can trimmed be edited inplace
     trimmed = genehits[keep&hit_bool].copy()
     removed = genehits[~keep&hit_bool].copy()
-    print(" * Thresholds: min_count={}. min_inserts={}.".format(args.min_count, args.min_inserts))
+    print(" * Thresholds: min_count={}. min_inserts={}. min_sites={}.".format(args.min_count, args.min_inserts, args.min_sites))
     print("{}/{}({:.2f}%) more genes removed by threshold. {}/{}({:.2f}%) genes remaining.".format( len(removed), len(genehits), 100*len(removed)/len(genehits), len(trimmed), len(genehits), 100*len(trimmed)/len(genehits) ))
     if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions"])
 
@@ -225,7 +246,6 @@ def pairwise_comparison(args):
     removed_filename = "{}/removed.csv".format(output_folder)
     print(" * Saved removed genes to {}".format(removed_filename))
     removed.to_csv(removed_filename, header=True, index=False)
-
 
     print(" * Calculating statistical significance...")
     print("Stop early by pressing Ctrl+C in the terminal.")
@@ -254,8 +274,8 @@ def pairwise_comparison(args):
             data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
             # u_stat, pvalue = mannwhitneyu(data1, data2)
-            # t_stat, pvalue = ttest_ind(data1, data2)
-            t_stat, pvalue = wilcoxon(data1, data2)
+            t_stat, pvalue = ttest_ind(data1, data2)
+            # t_stat, pvalue = wilcoxon(data1, data2)
 
             trimmed.loc[i, "P_Value"] = pvalue
 
@@ -290,22 +310,19 @@ def pairwise_comparison(args):
     print(" * Saved pairwise analysis to {}".format(pairwise_filename))
     trimmed.to_csv(pairwise_filename, header=True, index=False)
 
-    # print(trimmed.sort_values(by="P_Value", ascending=False))
-    # print(trimmed.sort_values(by="Sample_Fitness", ascending=False)[["Gene_ID", "Sample_Fitness"]])
-    # exit()
 
     # TODO : move plotting to separate script, import functions to use here
     # Plotting below
     # These are scatter plots for now
     combine_plots = [ # x, y suffix, s, xlog, ylog
         ["Gene_Length", "Diversity", 2, True, False],
-        ["Gene_Length", "Hits", 1, True, True],
+        ["Gene_Length", "Hits", 2, True, True],
         ["Start", "Diversity", 8, False, False],
         ["Start", "Hits", None, False, True],
     ]
     single_plots = [ # x, y, s, xlog, ylog
-        ["Gene_Length", "TA_Count", 2, True, True],
-        ["Control_Hits", "Sample_Hits", 4, True, True],
+        ["Gene_Length", "TA_Count", 6, True, True],
+        ["Control_Hits", "Sample_Hits", 6, True, True],
         # Reads differences
         ["Start", "Log2FC_Reads", None, False, False],
         ["Start", "LinearDiff_Reads", None, False, False],
@@ -337,7 +354,7 @@ def pairwise_comparison(args):
     p_sig_colors = trimmed["P_Sig"].map(colors)
 
     if args.plot:
-        print(" * Calculating generating plots...")
+        print(" * Generating plots...")
         for x, y, s, xlog, ylog in combine_plots:
             print("Plotting x={} y={}".format(x, y))
             fig = plt.figure(figsize=[16, 8])
@@ -372,7 +389,8 @@ def pairwise_comparison(args):
             print("Plotting col={}".format(col))
             fig = plt.figure(figsize=[12, 8])
             ax = fig.add_subplot(111)
-            trimmed[col].plot.hist(bins=200)
+            df = trimmed[col].replace([np.inf, -np.inf], np.nan, inplace=False)
+            df.plot.hist(bins=200)
             plt.xlabel(f"{col}")
             plt.savefig(f"{output_folder}/{col}_hist.png")
             plt.close(fig)

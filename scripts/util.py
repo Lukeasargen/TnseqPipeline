@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from scipy.stats import trim_mean
 
 
@@ -12,6 +13,7 @@ def time_to_string(t):
 
 
 def column_stats(table, columns):
+    if type(columns)==str: columns=[columns]
     for n in columns:
         print( "\nColumn Stats : {}".format(n) )
         print( "Min={:.4f}. Max={:.4f}.".format(table[n].min(), table[n].max()) )
@@ -36,15 +38,47 @@ def read_fasta(filename, ret_name=False):
     return fullseq
 
 
+def get_tamap_columns(tamap):
+    # Get all the column names by making a set (a set has no duplicates)
+    # TAmap has 8 non-read headers
+    return set([ n for n in tamap.columns[8:] ])
+
+
+def exclude_sites_tamap(tamap, exclude_first=0, exclude_last=0):
+    """ Remove a a percentage of the reads from the start and end of a region.
+        exclude_first and exclude_last are percentages as decimals
+        Idea from : "Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms"
+    """
+    tamap = tamap.copy()
+    map_names = get_tamap_columns(tamap)
+    # We want to keep the data inside the exclude_first and
+    # exclude_last region and remove the rest.  The simplest way
+    # I could come up with was to set everything outside the region to zero.
+
+    # This section calculates the start and end of the regions we want to keep
+    # 1+End-Start is the gene length and exlcued
+    if exclude_first>0 and exclude_first<1.0:
+        new_start = tamap["Start"] + (1+tamap["End"]-tamap["Start"])*exclude_first
+    else:
+        new_start = tamap["Start"]
+    if exclude_first>0 and exclude_first<1.0:
+        new_end = tamap["End"] - (1+tamap["End"]-tamap["Start"])*exclude_last
+    else:
+        new_end = tamap["End"]
+    # This is a boolean column with all the rows which are set to 0
+    # the vertical bar | is the python bitwise "or" operator
+    remove = (tamap["TA_Site"] < new_start) | (tamap["TA_Site"] > new_end)
+    # Set all the read colums for the excluded regions to 0
+    tamap.loc[remove, map_names] = 0
+    return tamap
+
+
 def tamap_to_genehits(tamap, fasta_filename=None, pooling="sum"):
     """ Covert a TAmap table into a GeneHits table """
     tamap = tamap.copy()
     # Remove the intergenic regions
     genemap = tamap[tamap['Gene_ID'].notna()]
-    # Get all the names by removing the suffix from the column names
-    # and making a set (a set has no duplicates)
-    # TAmap has 8 non-read headers
-    map_names = set([ n for n in genemap.columns[8:] ])
+    map_names = get_tamap_columns(genemap)
     # Get other gene data into a genehits df
     grouped = genemap.groupby("Gene_ID", as_index=False)
     genehits = grouped.agg({"Start": "first", "End": 'first', "Direction": "first"})
