@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import argparse
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -33,13 +34,20 @@ def get_args():
         help="Boolean flag that outputs all my debugging messages. default=False.")
     parser.add_argument('--plot', default=False, action='store_true',
         help="Boolean flag that automatically makes a few plots of the data. default=False.")
+    parser.add_argument('--norm', type=str, default="ttr",
+        choices=["total", "quantile", "ttr"],
+        help="String argument. Choose the normalization between total cound, quantile, or ttr (total trimmed reads). default=ttr.")
+    parser.add_argument('--quantile', default=0.75, type=float,
+        help="Float argument. Significance level. default=0.05.")
+    parser.add_argument('--ttr', default=0.05, type=float,
+        help="Float argument. Significance level. default=0.05.")
     parser.add_argument('--strand', type=str, default="both",
         choices=["both", "forward", "reverse"],
-        help="String argument. Use this specified strand for analysis. default=both.")
+        help="String argument. Specify strand for analysis. default=both.")
     parser.add_argument('--alpha', default=0.05, type=float,
         help="Float argument. Significance level. default=0.05.")
     parser.add_argument('--min_count', default=1, type=int,
-        help="Integer argument. Threshold for lowest number of hits PER GENE after pooling. Removes genes with low pooled hits. These genes are not tested for significance and saved in a separate output table. default=1.")
+        help="Integer argument. Threshold for lowest number of insertions PER GENE after pooling. Removes genes with insertions. These genes are not tested for significance and saved in a separate output table. default=1.")
     parser.add_argument('--min_inserts', default=2, type=int,
         help="Integer argument. Threshold for lowest number of insertion sites with hits BY GENE. Removes genes with low hit diversity (unique insertion sites). These genes are not tested for significance and saved in a separate output table. default=2.")
     parser.add_argument('--min_sites', default=0, type=int,
@@ -98,10 +106,16 @@ def pairwise_comparison(args):
 
     print(" * Normalizing...")
     if args.debug: print("\nStats before norm:"); column_stats(tamap, columns=test_columns)
-    # tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
-    # tamap = total_count_norm(tamap, columns=test_columns, debug=args.debug)
-    # tamap = quantile_norm(tamap, q=0.75, columns=test_columns, debug=args.debug)
-    tamap = ttr_norm(tamap, trim=0.05, columns=test_columns, debug=args.debug)
+
+    tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
+
+    norms = {
+        "total": partial(total_count_norm, tamap, columns=test_columns, debug=args.debug),
+        "quantile": partial(quantile_norm, tamap, q=args.quantile, columns=test_columns, debug=args.debug),
+        "ttr": partial(ttr_norm, tamap, trim=args.ttr, columns=test_columns, debug=args.debug)
+    }
+    tamap = norms[args.norm]()
+        
     if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
 
     print(" * Compressing TAmap into Genehits table...")
@@ -274,8 +288,8 @@ def pairwise_comparison(args):
             data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
             # u_stat, pvalue = mannwhitneyu(data1, data2)
-            t_stat, pvalue = ttest_ind(data1, data2)
-            # t_stat, pvalue = wilcoxon(data1, data2)
+            # t_stat, pvalue = ttest_ind(data1, data2)
+            t_stat, pvalue = wilcoxon(data1, data2)
 
             trimmed.loc[i, "P_Value"] = pvalue
 
@@ -390,7 +404,7 @@ def pairwise_comparison(args):
             fig = plt.figure(figsize=[12, 8])
             ax = fig.add_subplot(111)
             df = trimmed[col].replace([np.inf, -np.inf], np.nan, inplace=False)
-            df.plot.hist(bins=200)
+            df.plot.hist(bins=150)
             plt.xlabel(f"{col}")
             plt.savefig(f"{output_folder}/{col}_hist.png")
             plt.close(fig)
@@ -423,6 +437,7 @@ def pairwise_comparison(args):
         plt.xlabel("log2 fold Change")
         plt.ylabel("-log10(p-value)")
         fig.tight_layout()
+        plt.ylim(Y.min(), Y.max())
         plt.savefig(f"{output_folder}/Volcano_Plot.png")
         plt.ylim(Y.min(), min(4, Y.max()))
         plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
