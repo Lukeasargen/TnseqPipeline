@@ -6,15 +6,14 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from scipy.stats import mannwhitneyu, ttest_ind, wilcoxon
 
+from plotting import pairwise_plots
 from util import tamap_to_genehits, column_stats
 from util import total_count_norm, quantile_norm, gene_length_norm, ttr_norm
 from util import exclude_sites_tamap
 from util import bh_procedure
 from util import time_to_string
-
 from zinb_glm import zinb_test
 
 
@@ -61,6 +60,8 @@ def get_args():
         help="Float argument. Expansion factor used in the fitness formula described by Opijnen (Nature 2009). default=250.")
     parser.add_argument('--insert_weighting', default=False, action='store_true',
         help="Boolean flag that scales PER GENE based on unique inserts. The Formula is new_hits=old_hits*(unique_inserts/average_unique_inserts). default=False.")
+    parser.add_argument('--length_norm', default=False, action='store_true',
+        help="Boolean flag that scales PER GENE based on gene length. default=False.")
     parser.add_argument('--gc', default=False, action='store_true',
         help="Boolean flag that calculates the GC content of each gene. Not used in any test, but it makes some plots and gets saved in the output. default=False.")
     parser.add_argument('--ef', "--exclude_first", default=0, type=float, dest="exclude_first",
@@ -107,7 +108,8 @@ def pairwise_comparison(args):
     print(" * Normalizing...")
     if args.debug: print("\nStats before norm:"); column_stats(tamap, columns=test_columns)
 
-    tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
+    if args.length_norm:
+        tamap = gene_length_norm(tamap, columns=test_columns, debug=args.debug)
 
     norms = {
         "total": partial(total_count_norm, tamap, columns=test_columns, debug=args.debug),
@@ -256,7 +258,7 @@ def pairwise_comparison(args):
     removed = genehits[~keep&hit_bool].copy()
     print(" * Thresholds: min_count={}. min_inserts={}. min_sites={}.".format(args.min_count, args.min_inserts, args.min_sites))
     print("{}/{}({:.2f}%) more genes removed by threshold. {}/{}({:.2f}%) genes remaining.".format( len(removed), len(genehits), 100*len(removed)/len(genehits), len(trimmed), len(genehits), 100*len(trimmed)/len(genehits) ))
-    if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions"])
+    if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions", "Control_Diversity", "Sample_Diversity"])
 
     # Save genes that are removed
     removed_filename = "{}/removed.csv".format(output_folder)
@@ -327,125 +329,9 @@ def pairwise_comparison(args):
     print(" * Saved pairwise analysis to {}".format(pairwise_filename))
     trimmed.to_csv(pairwise_filename, header=True, index=False)
 
-
-    # TODO : move plotting to separate script, import functions to use here
-    # Plotting below
-    # These are scatter plots for now
-    combine_plots = [ # x, y suffix, s, xlog, ylog
-        ["Gene_Length", "Diversity", 2, True, False],
-        ["Gene_Length", "Hits", 2, True, True],
-        ["Start", "Diversity", 8, False, False],
-        ["Start", "Hits", None, False, True],
-    ]
-    single_plots = [ # x, y, s, xlog, ylog
-        ["Gene_Length", "TA_Count", 6, True, True],
-        ["Control_Hits", "Sample_Hits", 6, True, True],
-        # Reads differences
-        ["Start", "Log2FC_Reads", None, False, False],
-        ["Start", "LinearDiff_Reads", None, False, False],
-        ["Log2FC_Reads", "LinearDiff_Reads", None, False, False],
-        # Inserts differences
-        ["Start", "Log2FC_Inserts", None, False, False],
-        ["Start", "LinearDiff_Inserts", None, False, False],
-        ["Log2FC_Inserts", "LinearDiff_Inserts", None, False, False],
-        # Survival Index
-        ["Start", "Log2SI", None, False, False],
-        ["Log2FC_Reads", "Log2SI", None, False, False],
-        # Fitness
-        ["Start", "Sample_Fitness", None, False, False],
-        ["Log2FC_Reads", "Sample_Fitness", None, False, False],
-        ["Start", "Log2Fitness", None, False, False],
-        ["Log2FC_Reads", "Log2Fitness", None, False, False],
-    ]
-    if args.gc:
-        combine_plots.append(["GC", "Hits", 4, False, True])
-        single_plots.append(["Start", "GC", None, False, False])
-
-    hist_plots = ["Log2SI",
-        "Log2FC_Reads",
-        "Log2FC_Inserts",
-        "Sample_Fitness"
-    ]
-
-    colors = {False:'tab:green', True:'tab:red'}
-    p_sig_colors = trimmed["P_Sig"].map(colors)
-
+    print(" * Generating plots...")
     if args.plot:
-        print(" * Generating plots...")
-        for x, y, s, xlog, ylog in combine_plots:
-            print("Plotting x={} y={}".format(x, y))
-            fig = plt.figure(figsize=[16, 8])
-            ax = fig.add_subplot(111)
-            ax.scatter(x=trimmed[x], y=trimmed[f"Control_{y}"], s=s, color="tab:green", label="Control")
-            ax.scatter(x=trimmed[x], y=trimmed[f"Sample_{y}"], s=s, color="tab:red", label="Sample")
-            ax.set_xlabel(x)
-            ax.set_ylabel(y)
-            if xlog: ax.set_xscale('log')
-            if ylog: ax.set_yscale('log')
-            plt.legend()
-            fig.tight_layout()
-            plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
-            plt.close(fig)
-
-        for x, y, s, xlog, ylog in single_plots:
-            print("Plotting x={} y={}".format(x, y))
-            fig = plt.figure(figsize=[16, 8])
-            ax = fig.add_subplot(111)
-            ax.scatter(x=trimmed[x], y=trimmed[y], s=s, color=p_sig_colors)
-            # plt.hlines(trimmed[y].median(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:red", label="Median={:.2f}".format(trimmed[y].median()))
-            # plt.hlines(trimmed[y].mean(), xmin=trimmed[x].min(), xmax=trimmed[x].max(), color="tab:blue", label="Mean={:.2f}".format(trimmed[y].mean()))
-            ax.set_xlabel(x)
-            ax.set_ylabel(y)
-            if xlog: ax.set_xscale('log')
-            if ylog: ax.set_yscale('log')
-            fig.tight_layout()
-            plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
-            plt.close(fig)
-
-        for col in hist_plots:
-            print("Plotting col={}".format(col))
-            fig = plt.figure(figsize=[12, 8])
-            ax = fig.add_subplot(111)
-            df = trimmed[col].replace([np.inf, -np.inf], np.nan, inplace=False)
-            df.plot.hist(bins=150)
-            plt.xlabel(f"{col}")
-            plt.savefig(f"{output_folder}/{col}_hist.png")
-            plt.close(fig)
-
-        # Make the MA plot
-        print("Plotting MA plot")
-        fig = plt.figure(figsize=[12, 8])
-        A = 0.5 * ( np.log2(trimmed["Sample_Hits"]) + np.log2(trimmed["Control_Hits"]) )
-        M = trimmed["Log2FC_Reads"]
-        plt.scatter(x=A, y=M, s=10, color=p_sig_colors)
-        plt.hlines(M.median(), xmin=A.min(), xmax=A.max(), color="tab:red", label="Median={:.2f}".format(M.median()))
-        plt.hlines(M.mean(), xmin=A.min(), xmax=A.max(), color="tab:blue", label="Mean={:.2f}".format(M.mean()))
-        plt.hlines([-1, 1], xmin=A.min(), xmax=A.max(), color="tab:blue", linestyle='dashed')
-        plt.legend(loc="upper left")
-        plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
-        plt.ylabel("M = log2(sample) - log2(control)")
-        fig.tight_layout()
-        plt.savefig(f"{output_folder}/MA_Plot.png")
-        plt.close(fig)
-
-
-        # Make the volcano plot
-        print("Plotting Volcano plot")
-        fig = plt.figure(figsize=[12, 8])
-        X = trimmed["Log2FC_Reads"]
-        Y = trimmed["Log10P"]
-        plt.scatter(x=X, y=Y, s=8, color=p_sig_colors)
-        plt.hlines(-np.log10(args.alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
-        plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
-        plt.xlabel("log2 fold Change")
-        plt.ylabel("-log10(p-value)")
-        fig.tight_layout()
-        plt.ylim(max(0, Y.min()), Y.max())
-        plt.savefig(f"{output_folder}/Volcano_Plot.png")
-        plt.ylim(max(0, Y.min()), min(4, Y.max()))
-        plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
-        plt.close(fig)
-
+        pairwise_plots(trimmed, output_folder, args.alpha)
 
 
 if __name__ == "__main__":

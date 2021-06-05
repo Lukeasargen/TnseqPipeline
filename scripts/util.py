@@ -190,7 +190,7 @@ def gene_length_norm(genehits, columns=None, debug=False):
     lengths = 1+temp["End"]-temp["Start"]
     norm_length = lengths.mean()
     for name in columns:
-        temp[name] = (norm_length/lengths)*temp[name]
+        temp[name] = (lengths/norm_length)*temp[name]
     if debug:
         print("\ngene_length_norm")
         print("columns :", columns)
