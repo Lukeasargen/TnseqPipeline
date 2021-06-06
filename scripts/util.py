@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from scipy.stats import trim_mean
 
 
@@ -200,7 +199,7 @@ def gene_length_norm(genehits, columns=None, debug=False):
 
 """ Stats Functions """
 
-def bh_procedure(pvalues):
+def bh_procedure(pvalues, alpha=0.05):
     """ Benjamini-Hochberg Procedure.
         Formula from this video:
             "False Discovery Rates, FDR, clearly explained"
@@ -214,17 +213,20 @@ def bh_procedure(pvalues):
     sort_idx = np.argsort(pvalues)
     qvalues = np.take(pvalues, sort_idx)
 
+    new_alpha = alpha
     # Then step through the list from largest to smallest
     # Largest qvalue is the same, so use m-1
     # The rest is a simple formula that takes the minimum
     for i in reversed(range(m-1)):
         new_q = qvalues[i] * m/(i+1)
         qvalues[i] = min(new_q, qvalues[i+1])
+        if qvalues[i] < alpha and qvalues[i]!=0 and new_alpha==alpha:
+            new_alpha = pvalues[sort_idx[i]]
 
     # Double argsort trick. https://www.berkayantmen.com/rank.html
     out = np.empty_like(qvalues)
     out[sort_idx] = qvalues
     # unsort_idx = np.argsort(sort_idx)
     # qvalues = np.take(qvalues, unsort_idx)
-    return out
+    return out, new_alpha
 
