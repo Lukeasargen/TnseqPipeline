@@ -137,26 +137,34 @@ def design_matrix(conditions):
     return Xg
 
 
-def nll_glm(params, y, conditions, dist="nb"):
+def nll_glm(params, y, Xg, Dg=None, nzmean=None, diversity=None, dist="nb"):
     """ Negative log-likelihood of the ZINB-GLM model """
+    eps = 1e-20  # A little epsilon to avoid errors
     pg = params[0]
     ag, yg = np.split(params[1:], 2)
-    Xg = design_matrix(conditions)
     # Convert to compatible shapes, column vectors
     ag = ag.reshape(-1,1)
     yg = yg.reshape(-1,1)
     n_reads = y[y==0].reshape(-1,1)
     y_reads = y[y>0].reshape(-1,1)
     # Use the formulas to get distribution parameters
-    n = np.exp(pg)
+    n = np.exp(pg)  # Dispersion parameters
+    # Mean is estimated using ag if there is no nzmean arg
     mu = np.exp(Xg.dot(ag))
-    pi = Xg.dot( np.exp(yg)/(1+np.exp(yg)) )  # This is another form of sigmoid
-    # pi = Xg.dot( 1/(1+np.exp(-yg)) )  # Sigmoid, equivalent to above
+    # Multiply mean offsets, ag estimates a ratio of the expected mean over non-zero mean
+    if nzmean is not None: mu = np.multiply(mu, Dg.dot(nzmean.reshape(-1,1)))
+    # Extraneous is estimated by yg
+    yg = Xg.dot(yg)
+    # Add extraneous offset, yg estimates the change from the average diversity
+    if diversity is not None:
+        temp = Dg.dot(diversity.reshape(-1,1))
+        temp[temp<=0] = eps
+        temp[temp>=1] = 1-eps
+        yg += np.log(temp/(1-temp))  # logit function, hopefully this is never 0 or 1
+    pi = 1/(1+np.exp(-yg))  # Sigmoid, inverse of logit function
     p = n/(mu+n)
-    # print("n={:.60f}".format(n))
-    # print("p, mu, ag :", p, mu, ag)
-    # ZINB (Equation 2)
 
+    # ZINB (Equation 2)
     if dist=="nb":
         # Negative Binomial
         n_reads = pi[y==0] + (1.0-pi[y==0])*nbinom.pmf(n_reads, n, p[y==0])
@@ -169,33 +177,35 @@ def nll_glm(params, y, conditions, dist="nb"):
         sd = np.sqrt(var)
         n_reads = pi[y==0] + (1.0-pi[y==0])*norm.pdf(n_reads, mu[y==0], sd[y==0])
         y_reads = (1.0-pi[y>0])*norm.pdf(y_reads, mu[y>0], sd[y>0])
-
     # Compute the negative log-likelihood
     """ https://stackoverflow.com/questions/5124376/convert-nan-value-to-zero/5124409 """ 
     # The stackoverflow answer was ok, but sometimes values are still 0
     # I added a little epsilon and everything seems to work better.
-    eps = 1e-25
     n_reads = np.nan_to_num(np.log(n_reads + eps))
     y_reads = np.nan_to_num(np.log(y_reads + eps))
     nll = -(np.sum(n_reads) + np.sum(y_reads))
     return nll
 
 
-def glm_fit(data, conditions, dist="nb", debug=False):
+def glm_fit(data, Xg, Dg=None, nzmean=None, diversity=None, dist="nb", debug=False):
     """ Fits a single gene to a ZINB distribution.
         There are some hard-code initial values in this function.
     """
     # Scipy function requires integers
     # np.rint converts to the nearest integer
     data = np.rint(np.array(data)).astype(np.int)
-    k = num_conditions(conditions)  # k conditions
+    k = Xg.shape[1]  # k conditions, columns in design matrix
     # Pack the parameters into a list, required for scipy.optimize
-    # Initialization the mean and dispersion as the non-zero mean
-    nz_mean = np.mean(data[data>0])
-    pg = np.log(nz_mean)  # coefficient for r/n
-    ag = np.log(nz_mean)  # coefficient for finding mean
+    # Initialization the mean as 1 assuming that the nzmean arg is supplied
+    init_mean = 1
+    # If there is no nzmean arg, then use the non-zero mean of the data
+    if nzmean is None: init_mean = np.mean(data[data>0])
+    pg = np.log(init_mean)  # coefficient for r/n
+    ag = np.log(init_mean)  # coefficient for finding mean
     # Initialization extraneous probability
-    init_pi = 0.000001  # initial extraneous probability 
+    init_pi = 0.5  # initial extraneous probability as with offsets
+    # If there is no diversity arg, then use a low probability
+    if diversity is None: init_pi = 0.000001
     yg = np.log(init_pi/(1-init_pi))  # coefficient for pi
     params = np.array([pg] + k*[ag] + k*[yg])
     # Using scipy.minimize throws erros without using bounds
@@ -209,7 +219,7 @@ def glm_fit(data, conditions, dist="nb", debug=False):
     bounds = [(eps, upper_n)] + k*[(None, upper_sigmoid)] + k*[(None, upper_exp)]
     method = "L-BFGS-B"  # Recommended for bounded optimization
     options = {"ftol":1e-9, "gtol": 1e-8, "eps": 1e-8}  # TODO : tried lowering these, no much change, rescaling helped more
-    results = minimize(nll_glm, params, args=(data, conditions, dist), bounds=bounds,
+    results = minimize(nll_glm, params, args=(data, Xg, Dg, nzmean, diversity, dist), bounds=bounds,
                         method=method, options=options)
     # Unpack the paramters and copmute the estimated distribution parameters
     params = results.x
@@ -217,48 +227,60 @@ def glm_fit(data, conditions, dist="nb", debug=False):
     ag, yg = np.split(params[1:], 2)
     n = np.exp(pg)
     mu = np.exp(ag)
-    pi = np.exp(yg)/(1+np.exp(yg))
+    if nzmean is not None: mu = np.multiply(Xg.dot(mu), Dg.dot(nzmean)).reshape(len(nzmean),-1)[:,0]
+    if diversity is not None: x = (Xg.dot(yg) + Dg.dot(diversity)).reshape(len(diversity),-1)[:,0]
+    pi = 1/(1+np.exp(-yg))
     p = n/(mu+n)  # From the paper
-    var = n*(1-p)/(p*p)  # From scipy docs
+    # var = n*(1-p)/(p*p)  # From scipy docs
     if debug:
-        print("pi :", pi); print("n :", n)
-        print("p :", p); print("mu :", mu); print("var :", var)
+        print("n :", n); print("p :", p)
+        print("diversity :", diversity); print("pi :", pi)
+        print("ag :", ag, np.exp(ag))
+        print("nzmean :", nzmean); print("mu :", mu)
     return params
 
 
-def zinb_glm_llr(data, conditions, dist="nb", rescale=0, debug=False):
+def zinb_glm_llr(data, conditions, nzmean=None, diversity=None, dist="nb", rescale=0, debug=False):
     """ Compute the Likelihood ratio test on the ZINB-GLM model """
     conditions1 = np.array(conditions)
     conditions0 = [0]*len(conditions1)
     if debug: print(" data :", np.rint(np.array(data)))
     if rescale>0:
         data = (rescale/np.mean(data[data>0])) * data
-        data = np.rint(np.array(data)).astype(np.int)
         if debug: print("scale :", data)
+    data = np.rint(np.array(data)).astype(np.int)
     # Difference in parameters is the degrees of freedom
     # 1 dispersion, mu and pi for all conditions, minus the 3 for the condition-indepented model
     delta_df = 1 + 2*num_conditions(conditions) - 3
-    params0 = glm_fit(data, conditions0, dist, debug=debug)  # Null Hypothesis
-    params1 = glm_fit(data, conditions1, dist, debug=debug)  # Alternative Hypothesis
+    # Create the observation design matrix
+    Dg = None  # Default is no observation matrix, 
+    if nzmean is not None:
+        # It is a binary matrix for the number of samples
+        # Since this test runs per gene, each gene has the same number of TA
+        # site in all conditions and that information along with the number of nzmeans
+        # can be used to create an observations matrix.
+        y = [i for i in range(len(nzmean)) for _ in range(int(len(conditions)/len(nzmean)))]
+        Dg = design_matrix(y)
+    # Create the design matric for the null and alternative models
+    Xg0 = design_matrix(conditions0)
+    Xg1 = design_matrix(conditions1)
+    params0 = glm_fit(data, Xg0, Dg, nzmean, diversity, dist, debug=debug)  # Null Hypothesis
+    params1 = glm_fit(data, Xg1, Dg, nzmean, diversity, dist, debug=debug)  # Alternative Hypothesis
     # Compute the log-likelihood
-    l0 = nll_glm(params0, data, conditions0, dist)
-    l1 = nll_glm(params1, data, conditions1, dist)
+    l0 = nll_glm(params0, data, Xg0, Dg, nzmean, diversity, dist)
+    l1 = nll_glm(params1, data, Xg1, Dg, nzmean, diversity, dist)
     # Compute log-likelihood ratio
     llr = 2*(l0-l1)
     # llr is approximately chi-squared
     # pvalue is the probability that we get this llr or higher for the given degrees of freedom
     pvalue = chi2.pdf(x=llr, df=delta_df)
     if debug:
-        s1, s2 = np.split(data, 2)
-        print("split    mean :", np.mean(s1), np.mean(s2))
-        print("split nz mean :", np.mean(s1[s1>0]), np.mean(s2[s2>0]))
-        print("mean={:.2f}. non-zero mean={:.2f}".format(np.mean(data), np.mean(data[data>0])))
         print("l0={:e}. l1={:e}. llr={:e}. ".format(l0, l1, llr))
         print("df={}. pvalue={:e}\n".format(delta_df, pvalue))
     return pvalue
 
 
-def zinb_test(data, conditions, dist="nb", rescale=0, debug=False):
+def zinb_test(data, conditions, nzmean=None, diversity=None, dist="nb", rescale=0, debug=False):
     """ Perform the ZINB-GLM test with rescaling """
     # Here is the likelihood ratio test (LRT)
     pvalue = zinb_glm_llr(data, conditions, dist, rescale, debug=debug)
@@ -273,12 +295,13 @@ def zinb_test(data, conditions, dist="nb", rescale=0, debug=False):
     scale = rescale
     while pvalue in [0, 0.5] and scale < 1000:
         scale += 50
-        pvalue = zinb_glm_llr(data, conditions, dist, rescale=scale, debug=debug)
+        pvalue = zinb_glm_llr(data, conditions, nzmean, diversity, dist, rescale=scale, debug=debug)
     if debug: print("Scale :", scale)
     return pvalue
 
 
-def zinb_glm_llr_full_test(data, conditions, dist="nb", rescale=0, debug=False):
+def zinb_glm_llr_full_test(data, conditions, nzmean=None, diversity=None,
+    dist="nb", rescale=0, debug=False):
     """ Do the Likelihood Ratio Test on the ZINB-GLM for each gene. """
     # Iterate over every row, length of first axis of data
     num_genes = len(data)
@@ -307,10 +330,10 @@ def zinb_glm_llr_full_test(data, conditions, dist="nb", rescale=0, debug=False):
             continue
 
         # Here is the likelihood ratio test (LRT)
-        # pvalue = zinb_glm_llr(row_data, conditions, dist, rescale, debug=debug)
+        pvalue = zinb_glm_llr(row_data, conditions, nzmean, diversity, dist, rescale, debug=debug)
 
         # Here is the test with rescaling
-        pvalue = zinb_test(row_data, conditions, dist, rescale, debug=debug)
+        # pvalue = zinb_test(row_data, conditions, nzmean, diversity, dist, rescale, debug=debug)
 
         # Sort the pvalue in the array
         pvalues[i,:] = pvalue
@@ -325,12 +348,12 @@ def zinb_glm_llr_full_test(data, conditions, dist="nb", rescale=0, debug=False):
 if __name__ == "__main__":
 
     debug = True
-    ta_sites = 200
-    saturation = 0.3
-    num_genes = 100
+    ta_sites = 4
+    saturation = 0.5
+    num_genes = 2
     min_count = 1
     max_count = 10
-    factor = 1000
+    factor = 100
     rescale = 0
     dist = "nb"
 
@@ -346,14 +369,21 @@ if __name__ == "__main__":
     data = data + data*conditions*1.0
     data = data.astype(np.int)
 
-    conditions = [0, 0, 0, 0, 1, 1, 1, 1]
-    data = np.array( [
-        [    0,  6959,  3473,     0,  2859, 23979, 22260,     0],
-        [    0,     0,  1191,     0, 21981,  3570,  4227,     0],
-        [    0,     0,  8641,  9077, 13916, 10370,     0,     0],
-    ] )
+    # conditions = [0, 0, 0, 0, 1, 1, 1, 1]
+    # data = np.array( [
+    #     [    0,  6959,  3473,     0,  2859, 23979, 22260,     0],
+    #     [    0,     0,  1191,     0, 21981,  3570,  4227,     0],
+    #     [    0,     0,  8641,  9077, 13916, 10370,     0,     0],
+    # ] )
 
-    pvalues = zinb_glm_llr_full_test(data, conditions, dist=dist, rescale=rescale, debug=debug)
+    nzmean = None
+    diversity = None
+    split = np.split(data, len(conditions)/ta_sites, axis=1)
+    nzmean = np.array([s[s>0].mean() for s in split])
+    diversity = np.array([np.count_nonzero(s)/s.size for s in split])
+
+    pvalues = zinb_glm_llr_full_test(data, conditions, nzmean=nzmean, diversity=diversity,
+        dist=dist, rescale=rescale, debug=debug)
     pvalues = np.squeeze(pvalues)
 
     sig_bool = pvalues<0.05
