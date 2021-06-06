@@ -3,6 +3,7 @@ import sys
 import time
 import argparse
 from functools import partial
+from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -14,7 +15,7 @@ from util import total_count_norm, quantile_norm, gene_length_norm, ttr_norm
 from util import exclude_sites_tamap
 from util import bh_procedure
 from util import time_to_string
-from zinb_glm import zinb_test
+from zinb_glm import zinb_glm_llr
 
 
 def get_args():
@@ -148,14 +149,14 @@ def pairwise_comparison(args):
     print(" * Calculating insertion density per gene...")
     # Need remove intergenic and group by gene
     temp = tamap[tamap['Gene_ID'].notna()].copy()  # Remove intergenic
-    temp["Control"] = temp[controls].mean(axis=1)  # Combine control replicates
-    temp["Sample"] = temp[samples].mean(axis=1)  # Combine sample replicates
-    grouped = temp.groupby("Gene_ID", as_index=False).nunique()  # Builtin method to get unique
+    temp["Control"] = temp[controls].mean(axis=1).astype(bool)  # Combine control replicates
+    temp["Sample"] = temp[samples].mean(axis=1).astype(bool)  # Combine sample replicates
+    grouped = temp.groupby("Gene_ID", as_index=False).sum()
+
     # Unique_Insertions : Unique TA hits / TA Sites
     # Diversity = Unique_Insertions / TA_Counts
-    # Subtract 1 bc it counts the 0 counts as unique but we don't care about this, genes with 0 hits should have 0 unique insertions
-    genehits["Control_Unique_Insertions"] = grouped["Control"]-1
-    genehits["Sample_Unique_Insertions"] = grouped["Sample"]-1
+    genehits["Control_Unique_Insertions"] = grouped["Control"]
+    genehits["Sample_Unique_Insertions"] = grouped["Sample"]
     genehits["Control_Diversity"] = genehits["Control_Unique_Insertions"] / genehits["TA_Count"]
     genehits["Sample_Diversity"] = genehits["Sample_Unique_Insertions"] / genehits["TA_Count"]
     # Don't need these anymore
@@ -265,6 +266,10 @@ def pairwise_comparison(args):
     print(" * Saved removed genes to {}".format(removed_filename))
     removed.to_csv(removed_filename, header=True, index=False)
 
+    # Values per column for ZINB-GLM offsets
+    nzmean = np.array( genehits[test_columns].replace(0, np.NaN).mean() )
+    diversity = np.array( tamap[test_columns].astype(bool).sum()/len(tamap) )
+
     print(" * Calculating statistical significance...")
     print("Stop early by pressing Ctrl+C in the terminal.")
     t0 = time.time()  # Start time
@@ -287,7 +292,7 @@ def pairwise_comparison(args):
 
             # gene_data = np.array(df[test_columns]).T.reshape(-1)
             # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
-            # pvalue = zinb_test(gene_data, conditions, dist="nb", rescale=0, debug=args.debug)
+            # pvalue = zinb_glm_llr(gene_data, conditions, nzmean, diversity, dist="nb", rescale=0, debug=args.debug)
             
             data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
             data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
@@ -295,10 +300,13 @@ def pairwise_comparison(args):
             # t_stat, pvalue = ttest_ind(data1, data2)
             t_stat, pvalue = wilcoxon(data1, data2)
 
+            if pvalue in [0, 0.5]:
+                print(f"{gene_name} failed.")
+                print(trimmed.loc[i])
+                print()
             trimmed.loc[i, "P_Value"] = pvalue
 
-            if args.debug: print(trimmed.loc[i])
-            if args.debug and c > 5: break        
+            if args.debug and c > 5: break
         except KeyboardInterrupt:
             break
 
@@ -318,7 +326,8 @@ def pairwise_comparison(args):
    
     # The same as above but for adjusted Q-values
     print(" * Adjusting p-values for multiple test...")
-    trimmed["Q_Value"] = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
+    qvalues, new_alpha = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
+    trimmed["Q_Value"] = qvalues
     trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<args.alpha, trimmed["Q_Value"]!=0)
     trimmed["Log10Q"] = -np.log10(trimmed["Q_Value"])
     sig_genes = trimmed["Q_Sig"].sum()
@@ -329,8 +338,8 @@ def pairwise_comparison(args):
     print(" * Saved pairwise analysis to {}".format(pairwise_filename))
     trimmed.to_csv(pairwise_filename, header=True, index=False)
 
-    print(" * Generating plots...")
     if args.plot:
+        print(" * Generating plots...")
         pairwise_plots(trimmed, output_folder, args.alpha)
 
 
