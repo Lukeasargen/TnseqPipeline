@@ -104,18 +104,19 @@ def pairwise_plots(table, output_folder, alpha=0.05):
 
     # Make the volcano plot
     print("Plotting Volcano plot")
-    fig = plt.figure(figsize=[12, 8])
-    X = table["Log2FC_Reads"]
-    Y = table["Log10P"]
-    plt.scatter(x=X, y=Y, s=8, color=p_sig_colors)
-    plt.hlines(-np.log10(alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
-    plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
-    plt.xlabel("log2 fold Change")
-    plt.ylabel("-log10(p-value)")
-    fig.tight_layout()
-    plt.ylim(max(0, Y.min()), Y.max())
-    plt.savefig(f"{output_folder}/Volcano_Plot.png")
-    plt.ylim(max(0, Y.min()), min(4, Y.max()))
-    plt.savefig(f"{output_folder}/Volcano_Plot_Trim.png")
-    plt.close(fig)
+    for col in ["Log10P", "Log10Q"]:
+        fig = plt.figure(figsize=[12, 8])
+        X = table["Log2FC_Reads"]
+        Y = table[col]
+        plt.scatter(x=X, y=Y, s=8, color=p_sig_colors)
+        plt.hlines(-np.log10(alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
+        plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
+        plt.xlabel("log2 fold Change")
+        plt.ylabel(f"-log10({col})")
+        fig.tight_layout()
+        plt.ylim(0, min(20, Y.max()))
+        plt.savefig(f"{output_folder}/Volcano_Plot_{col}.png")
+        plt.ylim(0, min(4, Y.max()))
+        plt.savefig(f"{output_folder}/Volcano_Plot_{col}_Trim.png")
+        plt.close(fig)
 
