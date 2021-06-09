@@ -100,7 +100,7 @@ The indexes are output into the indexes folder of your experiment. These files w
 
 Inputs:
 - Reads - fastq files
-- Adapters - fa files
+- Adapters - fasta files
 - Indexes - from stage 1
 - TA map - from stage 1
 
@@ -206,8 +206,8 @@ usage: analysis.py [-h] --experiment EXPERIMENT --index INDEX --controls CONTROL
                    [--min_count MIN_COUNT] [--min_inserts MIN_INSERTS]
                    [--min_sites MIN_SITES] [--pooling {sum,average}]
                    [--smoothing SMOOTHING] [--expansion EXPANSION]
-                   [--insert_weighting] [--gc] [--ef EXCLUDE_FIRST]
-                   [--el EXCLUDE_LAST]
+                   [--insert_weighting] [--length_norm] [--gc]
+                   [--ef EXCLUDE_FIRST] [--el EXCLUDE_LAST]
 
 Pairwise Comparison (Supports Replicates).
 
@@ -230,10 +230,12 @@ optional arguments:
                         data. default=False.
   --norm {total,quantile,ttr}
                         String argument. Choose the normalization between total
-                        cound, quantile, or ttr (total trimmed reads).
+                        count, quantile, or ttr (total trimmed reads).
                         default=ttr.
-  --quantile QUANTILE   Float argument. Significance level. default=0.05.
-  --ttr TTR             Float argument. Significance level. default=0.05.
+  --quantile QUANTILE   Float argument. Quantile used to normalize. default=0.75.
+  --ttr TTR             Float argument. Percentage of the highest and lowest
+                        values which are excluded before calculating the mean.
+                        default=0.05.
   --strand {both,forward,reverse}
                         String argument. Specify strand for analysis.
                         default=both.
@@ -268,6 +270,8 @@ optional arguments:
   --insert_weighting    Boolean flag that scales PER GENE based on unique inserts.
                         The Formula is
                         new_hits=old_hits*(unique_inserts/average_unique_inserts).
+                        default=False.
+  --length_norm         Boolean flag that scales PER GENE based on gene length.
                         default=False.
   --gc                  Boolean flag that calculates the GC content of each gene.
                         Not used in any test, but it makes some plots and gets

@@ -45,6 +45,8 @@ def pairwise_plots(table, output_folder, alpha=0.05):
     p_sig_colors = table["P_Sig"].map(colors)
 
     for x, y, s, xlog, ylog in combine_plots:
+        if not all(i in table.columns for i in [x,y]):
+            continue
         print("Plotting x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
@@ -60,6 +62,8 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         plt.close(fig)
 
     for x, y, s, xlog, ylog in single_plots:
+        if not all(i in table.columns for i in [x,y]):
+            continue
         print("Plotting x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
@@ -75,6 +79,8 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         plt.close(fig)
 
     for col, bins in hist_plots:
+        if col not in table.columns:
+            continue
         print("Plotting col={}".format(col))
         fig = plt.figure(figsize=[12, 8])
         ax = fig.add_subplot(111)
@@ -105,6 +111,8 @@ def pairwise_plots(table, output_folder, alpha=0.05):
     # Make the volcano plot
     print("Plotting Volcano plot")
     for col in ["Log10P", "Log10Q"]:
+        if col not in table.columns:
+            continue
         fig = plt.figure(figsize=[12, 8])
         X = table["Log2FC_Reads"]
         Y = table[col]

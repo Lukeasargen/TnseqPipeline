@@ -3,7 +3,6 @@ import sys
 import time
 import argparse
 from functools import partial
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -11,7 +10,7 @@ from scipy.stats import mannwhitneyu, ttest_ind, wilcoxon
 
 from plotting import pairwise_plots
 from util import tamap_to_genehits, column_stats
-from util import total_count_norm, quantile_norm, gene_length_norm, ttr_norm
+from util import total_count_norm, quantile_norm, gene_length_norm, ttr_norm, nzmean_norm
 from util import exclude_sites_tamap
 from util import bh_procedure
 from util import time_to_string
@@ -35,15 +34,18 @@ def get_args():
     parser.add_argument('--plot', default=False, action='store_true',
         help="Boolean flag that automatically makes a few plots of the data. default=False.")
     parser.add_argument('--norm', type=str, default="ttr",
-        choices=["total", "quantile", "ttr"],
-        help="String argument. Choose the normalization between total cound, quantile, or ttr (total trimmed reads). default=ttr.")
+        choices=["total", "quantile", "ttr", "nzmean"],
+        help="String argument. Choose the normalization between total count, quantile, ttr (Total Trimmed Reads), nzmean (Non-Zero Mean). default=ttr.")
     parser.add_argument('--quantile', default=0.75, type=float,
-        help="Float argument. Significance level. default=0.05.")
+        help="Float argument. Quantile used to normalize. default=0.75.")
     parser.add_argument('--ttr', default=0.05, type=float,
-        help="Float argument. Significance level. default=0.05.")
+        help="Float argument. Percentage of the highest and lowest values which are excluded before calculating the mean. default=0.05.")
     parser.add_argument('--strand', type=str, default="both",
         choices=["both", "forward", "reverse"],
         help="String argument. Specify strand for analysis. default=both.")
+    parser.add_argument('--stat', type=str, default=None,
+        choices=["mannu", "ttest", "wilcoxon", "zinb"],
+        help="String argument. Choose the statistical test between mannu (Mann Whitney U test), ttest (T test), wilcoxon, zinb (Zero-Inflated Binomial Regression). default=None.")
     parser.add_argument('--alpha', default=0.05, type=float,
         help="Float argument. Significance level. default=0.05.")
     parser.add_argument('--min_count', default=1, type=int,
@@ -115,10 +117,11 @@ def pairwise_comparison(args):
     norms = {
         "total": partial(total_count_norm, tamap, columns=test_columns, debug=args.debug),
         "quantile": partial(quantile_norm, tamap, q=args.quantile, columns=test_columns, debug=args.debug),
-        "ttr": partial(ttr_norm, tamap, trim=args.ttr, columns=test_columns, debug=args.debug)
+        "ttr": partial(ttr_norm, tamap, trim=args.ttr, columns=test_columns, debug=args.debug),
+        "nzmean": partial(nzmean_norm, tamap, columns=test_columns, debug=args.debug),
     }
     tamap = norms[args.norm]()
-        
+    
     if args.debug: print("\nStats after norm:"); column_stats(tamap, columns=test_columns)
 
     print(" * Compressing TAmap into Genehits table...")
@@ -202,7 +205,7 @@ def pairwise_comparison(args):
     df[["Control_Hits", "Sample_Hits"]] = genehits[["Control_Hits", "Sample_Hits"]]
     # Re adjust the table to with the same behavior as vanOpijnenLab "correction factors"
     # "Total Counts" effectively makes the columns have the same sum, which is identical to the vanOpijnenLab procedure
-    df = total_count_norm(df, columns=["Control_Hits", "Sample_Hits"], debug=args.debug)
+    df = total_count_norm(df, columns=["Control_Hits", "Sample_Hits"])
     # I'm pretty sure frequency is just the site counts over total conts
     df["contrl_freq"] = df["Control_Hits"] / genehits["Control_Hits"].sum()
     df["sample_freq"] = df["Sample_Hits"] / genehits["Sample_Hits"].sum()
@@ -270,50 +273,53 @@ def pairwise_comparison(args):
     nzmean = np.array( genehits[test_columns].replace(0, np.NaN).mean() )
     diversity = np.array( tamap[test_columns].astype(bool).sum()/len(tamap) )
 
-    print(" * Calculating statistical significance...")
-    print("Stop early by pressing Ctrl+C in the terminal.")
-    t0 = time.time()  # Start time
     trimmed["P_Value"] = np.nan
     trimmed["P_Sig"] = False
-    c = 0  # genes counter, this is different than the index value
-    for i in trimmed.index:
-        try:
-            # Helpful time estimate
-            c += 1
-            if c%10 == 0:
-                duration = time.time()-t0
-                remaining = duration/c * (len(trimmed)-c)
-                print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c, len(trimmed), c/duration, time_to_string(duration), time_to_string(remaining)), end="\r")
-            # # gene_name is used to index the full TAmap 
-            # # size is used to get the length of the condition array
-            gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
-            df = tamap[tamap["Gene_ID"]==gene_name]
-            if args.debug: print("\nStatistical Test for: ", gene_name)
+    if args.stat:
+        print(" * Calculating statistical significance...")
+        print("Stop early by pressing Ctrl+C in the terminal.")
+        t0 = time.time()  # Start time
+        c = 0  # genes counter, this is different than the index value
+        for i in trimmed.index:
+            try:
+                # Helpful time estimate
+                c += 1
+                if c%10 == 0:
+                    duration = time.time()-t0
+                    remaining = duration/c * (len(trimmed)-c)
+                    print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c, len(trimmed), c/duration, time_to_string(duration), time_to_string(remaining)), end="\r")
+                # # gene_name is used to index the full TAmap 
+                # # size is used to get the length of the condition array
+                gene_name, size = trimmed.loc[i][["Gene_ID", "TA_Count"]]
+                df = tamap[tamap["Gene_ID"]==gene_name]
 
-            # gene_data = np.array(df[test_columns]).T.reshape(-1)
-            # conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
-            # pvalue = zinb_glm_llr(gene_data, conditions, nzmean, diversity, dist="nb", rescale=0, debug=args.debug)
-            
-            data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
-            data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
-            # u_stat, pvalue = mannwhitneyu(data1, data2)
-            # t_stat, pvalue = ttest_ind(data1, data2)
-            t_stat, pvalue = wilcoxon(data1, data2)
+                if args.stat=="zinb":
+                    gene_data = np.array(df[test_columns]).T.reshape(-1)
+                    conditions = np.array([0]*size*len(controls) + [1]*size*len(samples))
+                    pvalue = zinb_glm_llr(gene_data, conditions, nzmean, diversity, dist="nb", rescale=0, debug=args.debug)
+                else:
+                    data1 = np.array(df[controls].mean(axis=1))  # Combine control replicates
+                    data2 = np.array(df[samples].mean(axis=1))  # Combine sample replicates
+                    if args.stat=="mannu":
+                        u_stat, pvalue = mannwhitneyu(data1, data2)
+                    elif args.stat=="ttest":
+                        t_stat, pvalue = ttest_ind(data1, data2)
+                    elif args.stat=="wilcoxon":
+                        t_stat, pvalue = wilcoxon(data1, data2)
 
-            if pvalue in [0, 0.5]:
-                print(f"{gene_name} failed.")
-                print(trimmed.loc[i])
-                print()
-            trimmed.loc[i, "P_Value"] = pvalue
+                if pvalue==0:
+                    print(f"\n{gene_name} failed.")
+                    print(trimmed.loc[i])
+                trimmed.loc[i, "P_Value"] = pvalue
 
-            if args.debug and c > 5: break
-        except KeyboardInterrupt:
-            break
+                if args.debug and c > 5: break
+            except KeyboardInterrupt:
+                break
 
-    # ^time estimate ended with return character so this prints a newline
-    duration = time.time()-t0
-    remaining = duration/c * (len(trimmed)-c)
-    print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c, len(trimmed), c/duration, time_to_string(duration), time_to_string(remaining)))
+        # ^time estimate ended with return character so this prints a newline
+        duration = time.time()-t0
+        remaining = duration/c * (len(trimmed)-c)
+        print("gene {}/{}. {:.1f} genes/second. elapsed={}. remaining={}.".format(c, len(trimmed), c/duration, time_to_string(duration), time_to_string(remaining)))
 
     # Make a boolean column for the P-value and a negative log10 for the volcano plot
     trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<args.alpha, trimmed["P_Value"]!=0)

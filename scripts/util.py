@@ -180,6 +180,28 @@ def ttr_norm(genehits, trim=0.05, columns=None, debug=False):
     return temp
 
 
+def nzmean_norm(genehits, columns=None, debug=False):
+    """ Normalize genehits using the .
+        Assumes most genes are not differentially expressed.
+        Does not consider gene length or library size.
+    """
+    temp = genehits.copy()
+    if columns==None:
+        columns = temp.columns[genehits_nonread_headers:]
+    multiply_factor = {}
+    for name in columns:
+        nzmean = genehits[name].replace(0, np.NaN).mean()
+        multiply_factor.update({name: nzmean})
+    max_total = max(multiply_factor.values())
+    multiply_factor = {k:max_total/v for k,v in multiply_factor.items()}
+    temp = apply_multiply_factors(temp, multiply_factor)
+    if debug:
+        print("\nnzmean_norm trim")
+        print("max_total :", max_total)
+        print("multiply_factor :", multiply_factor)
+    return temp
+
+
 def gene_length_norm(genehits, columns=None, debug=False):
     """ Normalize genehits using the a length column. """
     temp = genehits.copy()
