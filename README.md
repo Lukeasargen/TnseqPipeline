@@ -3,7 +3,7 @@
 - Setup Workspace
 - Stage 1 - Process the References
 - Stage 2 - Process the Reads
-- Stage 3 - Analyze
+- Stage 3 - Pairwise Analyze
 
 
 # Setup Workspace
@@ -168,37 +168,37 @@ python3 scripts/readTAmap.py --experiment=$EXPERIMENT_NAME --index=$INDEX --map=
 ```
 This script is documented in place. Nearly every line has a comment explaining what it does.
 
-# Stage 3 - Analysis
+# Stage 3 - Pairwise Analysis
 
-For now, [analysis.py](scripts/analysis.py) only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization (default is trimmed total reads with 5% of the highest and lowest values removed). Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
+For now, [pairwise.py](scripts/pairwise.py) only performs pairwise test for essential genes. It does support multiple biological replicates. The first operation is a normalization (default is trimmed total reads with 5% of the highest and lowest values removed). Then, the replicates are used in 2 ways: 1) each replicate's raw counts are used to calculate conditional statistical significance and 2) the replicates are merged by averaging to calculate ratios and other pairwise metrics.
 
 
 Here are the essential arguments for getting started:
 
 Display help message
 ```
-python3 scripts/analysis.py -h
+python3 scripts/pairwise.py -h
 ```
 
 Single reads. This is the minimum required inputs to run a pairwise comparison.
 ```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k
+python3 scripts/pairwise.py --experiment demo --index 14028c --controls c50k --samples s50k
 ```
 
 Biological replicates, separated by spaces, no filetype
 ```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c25k c50k --samples s25k s50k
+python3 scripts/pairwise.py --experiment demo --index 14028c --controls c25k c50k --samples s25k s50k
 ```
 
 --output = Create a folder in analysis with this name. This example outputs to a folder called "group1v3".
 ```
-python3 scripts/analysis.py --experiment demo --index 14028c --controls c50k --samples s50k --output=group1v3
+python3 scripts/pairwise.py --experiment demo --index 14028c --controls c50k --samples s50k --output=group1v3
 ```
 
 There are several other arguments. This is the help message.
 
 ```
-usage: analysis.py [-h] --experiment EXPERIMENT --index INDEX --controls CONTROLS
+usage: pairwise.py [-h] --experiment EXPERIMENT --index INDEX --controls CONTROLS
                    [CONTROLS ...] --samples SAMPLES [SAMPLES ...]
                    [--output OUTPUT] [--debug] [--plot]
                    [--norm {total,quantile,ttr}] [--quantile QUANTILE] [--ttr TTR]
