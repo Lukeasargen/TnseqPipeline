@@ -34,7 +34,7 @@ python3 scripts/referenceTAlist.py --experiment=$EXPERIMENT_NAME --fasta=$FASTA 
 
 
 # Generate the next possible command
-printf "\nCommand for processing reads:\n"
+printf "\nCommand for processing reads on this index:\n"
 
 cmd_str="./scripts/reads1.sh -e $EXPERIMENT_NAME -i $OUTPUT";
 

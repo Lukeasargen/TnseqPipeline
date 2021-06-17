@@ -83,13 +83,19 @@ This is the template for creating the correct reference files:
 ```
 ./scripts/reference1.sh -e experiment -f fasta -g gb -o index_name
 ```
+Repeat this for all references you need to index. Use different output names.
 
-Here is the command filled out to run the demo:
+
+### Here are the commands to run the demo.
+
+Chromosome:
 ```
 ./scripts/reference1.sh -e demo -f 14028s_chromosome.fasta -g 14028s_genome.gb -o 14028c
 ```
-<!-- # Bowtie 2
-./scripts/reference2.sh -e demo -f 14028s_chromosome -g 14028s_genome -o 14028c -->
+Plasmid:
+```
+./scripts/reference1.sh -e demo -f 14028s_plasmid.fasta -g 14028s_plasmid.gb -o 14028p
+```
 
 The indexes are output into the indexes folder of your experiment. These files will only be used by bowtie during the alignment step of processing reads. The name of these indexes, specified after -o, is used as the index name for the following steps.
 
@@ -112,13 +118,19 @@ Outputs:
 <!-- Use the same version of Bowtie as stage 1. -->
 This is the template for processing reads:
 ```
-./scripts/reads1.sh -e experiment_name -i index_name -a adapters -r reads
+./scripts/reads1.sh -e experiment_name -i indexes -a adapters -r reads
 ```
 
 This is a command filled out for the demo. Notice the reads are listed with the filetype extension and separated by a comma.
 ```
 ./scripts/reads1.sh -e demo -i 14028c -a PolyC_Adapter.fa -r c25k.fastq,c50k.fastq,s25k.fastq,s50k.fastq
 ```
+Both indexes can be run at the same time and the results will be merged into a map called all_TAmaps.csv.
+```
+./scripts/reads1.sh -e demo -i 14028c,14028p -a PolyC_Adapter.fa -r c25k.fastq,c50k.fastq,s25k.fastq,s50k.fastq
+
+```
+
 
 The `reads#.sh` scripts are most useful if you want to use default settings for trimming and aligning. If you need to change these parameters, this is the breakdown of each process called in the read scripts.
 

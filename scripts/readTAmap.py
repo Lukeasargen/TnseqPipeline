@@ -13,7 +13,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from util import tamap_to_genehits
-from util import total_count_norm
 
 
 def get_args():
@@ -31,7 +30,7 @@ def make_TAmap(args):
 
     talist_filename = "data/{}/references/{}_TAlist.csv".format(args.experiment, args.index)
     read_name, extension = os.path.splitext(args.map)
-    mapped_filename = "data/{}/reads/processed/{}_trimmed_mapped".format(args.experiment, read_name)
+    mapped_filename = "data/{}/reads/processed/{}_{}_mapped".format(args.experiment, args.index, read_name)
 
     # Read the TAlist for the index into a pandas dataframe
     # Headers: Accession, Loci, Gene_ID, Locus_Tag, Start, End, Direction, TA_Site
@@ -109,17 +108,7 @@ def make_TAmap(args):
     tamap.to_csv(tamap_filename, header=True, index=False)
     duration = time.time() - t0
 
-    # Plot all hits
-    print(" * Plotting histogram of hits on each strand...")
-    fig, ax = plt.subplots(2, figsize=[16,10])
-    tamap.plot(x="TA_Site", y=f"{read_name}_forward", ax=ax[0], color='tab:green')
-    ax[0].set_title("Forward TA Hits")
-    tamap.plot(x="TA_Site", y=f"{read_name}_reverse", ax=ax[1], color='tab:red')
-    ax[1].set_title("Reverse TA Hits")
-    fig.tight_layout()
-    plt.savefig("data/{}/maps/{}_{}_all_hits.png".format(args.experiment, args.index, read_name))
-
-    # Load up the full map and merge
+    # Load up the full map for the index and merge
     print(" * Calculating merging map...")
     merge_filename = "data/{}/maps/{}_TAmaps.csv".format(args.experiment, args.index)
     merge = pd.read_csv(merge_filename, delimiter=",")
@@ -136,11 +125,22 @@ def make_TAmap(args):
     print(" * Saving {}".format(genehits_filename))
     genehits.to_csv(genehits_filename, header=True, index=False)
 
-    # My sister wanted this output, I don't so I commented it out :)
+    # My sister wanted this output. I don't, so I commented it out :)
+    # from util import total_count_norm
     # normed = total_count_norm(genehits)
     # normed_filename = "data/{}/maps/{}_GenehitsNorm.csv".format(args.experiment, args.index)
     # print(" * Saving {}".format(normed_filename))
     # normed.to_csv(normed_filename, header=True, index=False)
+
+    # Plot all hits
+    print(" * Plotting histogram of hits on each strand...")
+    fig, ax = plt.subplots(2, figsize=[16,10])
+    tamap.plot(x="TA_Site", y=f"{read_name}_forward", ax=ax[0], color='tab:green')
+    ax[0].set_title("Forward TA Hits")
+    tamap.plot(x="TA_Site", y=f"{read_name}_reverse", ax=ax[1], color='tab:red')
+    ax[1].set_title("Reverse TA Hits")
+    fig.tight_layout()
+    plt.savefig("data/{}/maps/{}_{}_all_hits.png".format(args.experiment, args.index, read_name))
 
     # Summarize Mapping
     print(" * Summarizing mapping...")
