@@ -257,9 +257,8 @@ def pairwise_comparison(args):
     keep_sites = (genehits["TA_Count"] >= args.min_sites)
     keep = keep_count & keep_inserts & keep_sites
     # Separate the genes that will be tested from the rest
-    # TODO : does this need to be copied, can trimmed be edited inplace
-    trimmed = genehits[keep&hit_bool].copy()
-    removed = genehits[~keep&hit_bool].copy()
+    trimmed = genehits[keep&hit_bool]
+    removed = genehits[~keep&hit_bool]
     print(" * Thresholds: min_count={}. min_inserts={}. min_sites={}.".format(args.min_count, args.min_inserts, args.min_sites))
     print("{}/{}({:.2f}%) more genes removed by threshold. {}/{}({:.2f}%) genes remaining.".format( len(removed), len(genehits), 100*len(removed)/len(genehits), len(trimmed), len(genehits), 100*len(trimmed)/len(genehits) ))
     if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions", "Control_Diversity", "Sample_Diversity"])

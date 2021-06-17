@@ -2,9 +2,6 @@ import numpy as np
 from scipy.stats import trim_mean
 
 
-genehits_nonread_headers = 7  # Default is normalize all read data, if no columns are supplied to norm functions
-
-
 def time_to_string(t):
     if t > 3600: return "{:.2f} hours".format(t/3600)
     if t > 60: return "{:.2f} minutes".format(t/60)
@@ -37,10 +34,12 @@ def read_fasta(filename, ret_name=False):
     return fullseq
 
 
-def get_tamap_columns(tamap):
-    # Get all the column names by making a set (a set has no duplicates)
-    # TAmap has 8 non-read headers
-    return set([ n for n in tamap.columns[8:] ])
+def get_read_columns(table):
+    # Only read columns have one of these substrings
+    subs = ["_both", "_forward", "_reverse"]
+    # ret = list(filter(lambda x: any(s in x for s in subs), table.columns))
+    ret = [c for c in table.columns if any(s in c for s in subs)]
+    return ret
 
 
 def exclude_sites_tamap(tamap, exclude_first=0, exclude_last=0):
@@ -49,7 +48,7 @@ def exclude_sites_tamap(tamap, exclude_first=0, exclude_last=0):
         Idea from : "Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms"
     """
     tamap = tamap.copy()
-    map_names = get_tamap_columns(tamap)
+    map_names = get_read_columns(tamap)
     # We want to keep the data inside the exclude_first and
     # exclude_last region and remove the rest.  The simplest way
     # I could come up with was to set everything outside the region to zero.
@@ -77,7 +76,7 @@ def tamap_to_genehits(tamap, fasta_filename=None, pooling="sum"):
     tamap = tamap.copy()
     # Remove the intergenic regions
     genemap = tamap[tamap['Gene_ID'].notna()]
-    map_names = get_tamap_columns(genemap)
+    map_names = get_read_columns(genemap)
     # Get other gene data into a genehits df
     grouped = genemap.groupby("Gene_ID", as_index=False)
     genehits = grouped.agg({"Start": "first", "End": 'first', "Direction": "first"})
@@ -125,7 +124,7 @@ def total_count_norm(genehits, columns=None, debug=False):
     """ Normalize genehits using the total reads. """
     temp = genehits.copy()
     if columns==None:
-        columns = temp.columns[genehits_nonread_headers:]
+        columns = get_read_columns(temp)
     multiply_factor = {}
     for name in columns:
         multiply_factor.update({name: temp[name].sum()})
@@ -143,7 +142,7 @@ def quantile_norm(genehits, q=0.5, columns=None, debug=False):
     """ Normalize genehits using the q'th quantile of the non-zero values."""
     temp = genehits.copy()
     if columns==None:
-        columns = temp.columns[genehits_nonread_headers:]
+        columns = get_read_columns(temp)
     multiply_factor = {}
     for name in columns:
         multiply_factor.update({name: temp[temp[name]!=0][name].quantile(q=q)})
@@ -164,7 +163,7 @@ def ttr_norm(genehits, trim=0.05, columns=None, debug=False):
     """
     temp = genehits.copy()
     if columns==None:
-        columns = temp.columns[genehits_nonread_headers:]
+        columns = get_read_columns(temp)
     multiply_factor = {}
     for name in columns:
         a = np.mean(temp[name][temp[name]>0], axis=0)
@@ -187,7 +186,7 @@ def nzmean_norm(genehits, columns=None, debug=False):
     """
     temp = genehits.copy()
     if columns==None:
-        columns = temp.columns[genehits_nonread_headers:]
+        columns = get_read_columns(temp)
     multiply_factor = {}
     for name in columns:
         nzmean = genehits[name].replace(0, np.NaN).mean()
@@ -206,7 +205,7 @@ def gene_length_norm(genehits, columns=None, debug=False):
     """ Normalize genehits using the a length column. """
     temp = genehits.copy()
     if columns==None:
-        columns = temp.columns[genehits_nonread_headers:]
+        columns = get_read_columns(temp)
     # Normalize by gene length
     lengths = 1+temp["End"]-temp["Start"]
     norm_length = lengths.mean()
