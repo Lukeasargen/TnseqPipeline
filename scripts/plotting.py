@@ -7,9 +7,12 @@ def pairwise_plots(table, output_folder, alpha=0.05):
     combine_plots = [ # x, y suffix, s, xlog, ylog
         ["Gene_Length", "Diversity", 2, True, False],
         ["Gene_Length", "Hits", 2, True, True],
+        ["TA_Count", "Diversity", 4, True, False],
+        ["TA_Count", "Hits", 4, True, True],
         ["Start", "Diversity", 8, False, False],
         ["Start", "Hits", None, False, True],
-        ["GC", "Hits", 4, False, True]
+        ["GC", "Diversity", 4, False, True],
+        ["GC", "Hits", 4, False, True],
     ]
     single_plots = [ # x, y, s, xlog, ylog
         ["Gene_Length", "TA_Count", 6, True, True],
@@ -29,8 +32,6 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         # Fitness
         ["Start", "Sample_Fitness", None, False, False],
         ["Log2FC_Reads", "Sample_Fitness", None, False, False],
-        ["Start", "Log2Fitness", None, False, False],
-        ["Log2FC_Reads", "Log2Fitness", None, False, False],
     ]
     hist_plots = [ # column, bins
         ["Log2SI", 100],
@@ -41,13 +42,18 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         ["Q_Value", 20],
     ]
 
+    # print(table.columns)
+    # f = table.boxplot(column=['Control_Hits', 'Sample_Hits'], showfliers=False)
+    # plt.savefig("temp.png")
+    # exit()
+
     colors = {False:'tab:green', True:'tab:red'}
     p_sig_colors = table["P_Sig"].map(colors)
 
     for x, y, s, xlog, ylog in combine_plots:
-        if not all(i in table.columns for i in [x,y]):
+        if not all(i in table.columns for i in [x, f"Control_{y}", f"Sample_{y}"]):
             continue
-        print("Plotting x={} y={}".format(x, y))
+        print("Plotting Combined: x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
         ax.scatter(x=table[x], y=table[f"Control_{y}"], s=s, color="tab:green", label="Control")
@@ -64,7 +70,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
     for x, y, s, xlog, ylog in single_plots:
         if not all(i in table.columns for i in [x,y]):
             continue
-        print("Plotting x={} y={}".format(x, y))
+        print("Plotting: x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
         ax.scatter(x=table[x], y=table[y], s=s, color=p_sig_colors)
@@ -81,7 +87,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
     for col, bins in hist_plots:
         if col not in table.columns:
             continue
-        print("Plotting col={}".format(col))
+        print("Plotting Histogram: col={}".format(col))
         fig = plt.figure(figsize=[12, 8])
         ax = fig.add_subplot(111)
         df = table[col].replace([np.inf, -np.inf], np.nan, inplace=False)
@@ -122,7 +128,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         plt.xlabel("log2 fold Change")
         plt.ylabel(f"-log10({col})")
         fig.tight_layout()
-        plt.ylim(0, min(20, Y.max()))
+        plt.ylim(0, min(30, Y.max()))
         plt.savefig(f"{output_folder}/Volcano_Plot_{col}.png")
         plt.ylim(0, min(4, Y.max()))
         plt.savefig(f"{output_folder}/Volcano_Plot_{col}_Trim.png")

@@ -12,10 +12,9 @@ def column_stats(table, columns):
     if type(columns)==str: columns=[columns]
     for n in columns:
         print( "\nColumn Stats : {}".format(n) )
-        print( "Min={:.4f}. Max={:.4f}.".format(table[n].min(), table[n].max()) )
-        print( "Median={:.4f}.".format(table[n].median()) )
-        print( "Mean={:.3f}. Non-Zero Mean={:.3f}".format(table[n].mean(), table[table[n]!=0][n].mean()) )
         print( "Sum={:.4f}.".format(table[n].sum()) )
+        print( "Min={:.4f}. Max={:.4f}. Median={:.4f}.".format(table[n].min(), table[n].max(), table[n].median()) )
+        print( "Mean={:.3f}. Non-Zero Mean={:.3f}".format(table[n].mean(), table[table[n]!=0][n].mean()) )
     print()
 
 
@@ -250,4 +249,45 @@ def bh_procedure(pvalues, alpha=0.05):
     # unsort_idx = np.argsort(sort_idx)
     # qvalues = np.take(qvalues, unsort_idx)
     return out, new_alpha
+
+""" Misc """
+
+def calc_sample_fitness(table, control, sample, expansion):
+    """
+    Idea from : "Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms"
+    As far as I can tell, expansion factor (args.expansion) is an arbitrary value.
+    I explored it's effects on the fitness formula in desmos.
+    Formula = fitness = ln(ef*(sf)/(cf)) / ln(ef*(1-sf)/(1-cf))
+    where sf=sample frequency(t2), cf=control frequency(t1), and ef=expansion factor.
+    Changing expansion factor appears to change the steepness of the slope
+    around the neutral value. Larger expansion, smaller slope.
+    """
+    # Re adjust the table to with the same behavior as Opijnen "correction factors"
+    # "Total Counts" effectively makes the columns have the same sum, which is identical to the Opijnen procedure
+    df = total_count_norm(table, columns=[control, sample])
+    # I'm pretty sure frequency is just the site counts over total conts
+    df["contrl_freq"] = (df[control]) / df[control].sum()
+    df["sample_freq"] = (df[sample]) / df[sample].sum()
+    # This is the formula from Opijnen (Nature 2009) Online Methods
+    num = expansion*(df["sample_freq"])/(df["contrl_freq"])
+    dem = expansion*(1-df["sample_freq"])/(1-df["contrl_freq"])
+    fitness = np.log(num, out=np.zeros_like(num), where=(num!=0)) / np.log(dem, out=np.zeros_like(dem), where=(dem!=0))
+
+    # df["Sample_Fitness"] = fitness
+    # temp = df.sort_values(by="Sample_Fitness", ascending=True)
+    # for idx in temp.index[:2]:
+    #     print("idx :", idx)
+    #     print(df.iloc[idx])
+
+    return fitness
+
+
+def calc_survival_index(table, control, sample):
+    # Idea from : "Genetic basis of persister tolerance to aminoglycosides (2015) Shan...Lewis"
+    # dval_ctl = (genehits["Control_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Control_Hits"].sum())
+    # dval_exp = (genehits["Sample_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Sample_Hits"].sum())
+    # si = dval_exp/dval_ctl
+    # This is equivalent to above
+    si = (table[sample]*table[control].sum())/(table[control]*table[sample].sum())
+    return si
 

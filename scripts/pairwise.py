@@ -4,16 +4,17 @@ import time
 import argparse
 from functools import partial
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu, ttest_ind, wilcoxon
 
 from plotting import pairwise_plots
-from util import tamap_to_genehits, column_stats
+from util import time_to_string, column_stats, exclude_sites_tamap
+from util import tamap_to_genehits
 from util import total_count_norm, quantile_norm, gene_length_norm, ttr_norm, nzmean_norm
-from util import exclude_sites_tamap
 from util import bh_procedure
-from util import time_to_string
+from util import calc_sample_fitness, calc_survival_index
 from zinb_glm import zinb_glm_llr
 
 
@@ -177,6 +178,7 @@ def pairwise_comparison(args):
         genehits["Sample_Hits"] = genehits["Sample_Hits"] * (genehits["Sample_Unique_Insertions"]/avg_unique)
         if args.debug: print("\nStats after insertion weighting:"); column_stats(genehits, columns=["Control_Hits","Sample_Hits"])
 
+
     # NOTE : Below starts the actual statistical analysis, everything above was just building the table
 
     print(" * Calculating differential statistics...")
@@ -189,58 +191,36 @@ def pairwise_comparison(args):
     genehits["Log2FC_Inserts"] = np.log2(genehits["Ratio_Inserts"])
     genehits["LinearDiff_Inserts"] = genehits["Sample_Unique_Insertions"] - genehits["Control_Unique_Insertions"]
 
-
     print(" * Calculating fitness...")
-    """
-    Idea from : "Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms"
-    As far as I can tell, expansion factor (args.expansion) is an arbitrary value.
-    I explored it's effects on the fitness formula in desmos.
-    Formula = fitness = ln(ef*(sf)/(cf)) / ln(ef*(1-sf)/(1-cf))
-    where sf=sample frequency(t2), cf=control frequency(t1), and ef=expansion factor.
-    Changing expansion factor appears to change the steepness of the slope
-    around the neutral value. Larger expansion, smaller slope.
-    """
-    # Copy the columns so the original table is not changed
-    df = pd.DataFrame()
-    df[["Control_Hits", "Sample_Hits"]] = genehits[["Control_Hits", "Sample_Hits"]]
-    # Re adjust the table to with the same behavior as vanOpijnenLab "correction factors"
-    # "Total Counts" effectively makes the columns have the same sum, which is identical to the vanOpijnenLab procedure
-    df = total_count_norm(df, columns=["Control_Hits", "Sample_Hits"])
-    # I'm pretty sure frequency is just the site counts over total conts
-    df["contrl_freq"] = df["Control_Hits"] / genehits["Control_Hits"].sum()
-    df["sample_freq"] = df["Sample_Hits"] / genehits["Sample_Hits"].sum()
-    # This is the formula from Opijnen (Nature 2009) Online Methods
-    df["Sample_Fitness"] = np.log(args.expansion*(df["sample_freq"])/(df["contrl_freq"])) / np.log(args.expansion*(1-df["sample_freq"])/(1-df["contrl_freq"]))
-    genehits["Sample_Fitness"] = df["Sample_Fitness"]
-    genehits["Log2Fitness"] = np.log2(genehits["Sample_Fitness"])
+    genehits["Sample_Fitness"] = calc_sample_fitness(genehits, control="Control_Hits", sample="Sample_Hits", expansion=args.expansion)
+    if args.debug: column_stats(genehits, columns="Sample_Fitness")
 
     # Survival Index
     print(" * Calculating survival index...")
-    # Idea from : "Genetic basis of persister tolerance to aminoglycosides (2015) Shan...Lewis"
-    dval_ctl = (genehits["Control_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Control_Hits"].sum())
-    dval_exp = (genehits["Sample_Hits"]*genehits["Gene_Length"].sum()) / (genehits["Gene_Length"]*genehits["Sample_Hits"].sum())
-    si = dval_exp/dval_ctl
-    # This is equivalent to above
-    # si = (genehits["Sample_Hits"]*genehits["Control_Hits"].sum())/(genehits["Control_Hits"]*genehits["Sample_Hits"].sum())
+    si = calc_survival_index(genehits, control="Control_Hits", sample="Sample_Hits")
     genehits["Survival_Index"] = si
-    # This will throw an error if there are 0 sample hits, but whatever
-    # numpy is good at handling errors, log2(0)=-inf
-    genehits["Log2SI"] = np.log2(genehits["Survival_Index"])
+    genehits["Log2SI"] = np.log2(si, out=np.zeros_like(si), where=(si!=0))
+    if args.debug: column_stats(genehits, columns=["Survival_Index", "Log2SI"])
 
-    # First, find "possibly essential" genes
+
+    # First, save the whole table, just in case you need to look something up
+    genehits_filename = "{}/genehits.csv".format(output_folder)
+    print(" * Saved genehits table to {}".format(genehits_filename))
+    genehits.to_csv(genehits_filename, header=True, index=False)
+
+    # Find "possibly essential" genes
     print(" * Finding possibly essential genes...")
     # Idea from: "Tn-seq; high-throughput parallel sequencing for fitness and genetic interaction studies in microorganisms"
     possibly = (genehits[["Sample_Unique_Insertions"]] < 3).any(axis=1) & (genehits["Gene_Length"] >= 400)
-    possibly_filename = "{}/possibly_essential.csv".format(output_folder)
     print("{}/{}({:.2f}%) possibly essential genes.".format( possibly.sum(), len(genehits), 100*possibly.sum()/len(genehits) ) )
 
     # Save the possibly essential genes
+    possibly_filename = "{}/possibly_essential.csv".format(output_folder)
     print(" * Saved possibly essential genes to {}".format(possibly_filename))
     genehits[possibly].to_csv(possibly_filename, header=True, index=False)
 
     # Count and Insertion thresholding
-    print(" * Trimming away low saturated genes by thresholds...")
-
+    print(" * Trimming to use only genes that had hits...")
     # This bool saves whether the gene has counts in all groups
     hit_bool = ~(genehits[["Control_Unique_Insertions", "Sample_Unique_Insertions"]] == 0).any(axis=1)
     num_hit = hit_bool.sum()
@@ -257,11 +237,12 @@ def pairwise_comparison(args):
     keep_sites = (genehits["TA_Count"] >= args.min_sites)
     keep = keep_count & keep_inserts & keep_sites
     # Separate the genes that will be tested from the rest
-    trimmed = genehits[keep&hit_bool]
-    removed = genehits[~keep&hit_bool]
+    trimmed = genehits[keep&hit_bool].copy()
+    removed = genehits[~keep&hit_bool].copy()
     print(" * Thresholds: min_count={}. min_inserts={}. min_sites={}.".format(args.min_count, args.min_inserts, args.min_sites))
-    print("{}/{}({:.2f}%) more genes removed by threshold. {}/{}({:.2f}%) genes remaining.".format( len(removed), len(genehits), 100*len(removed)/len(genehits), len(trimmed), len(genehits), 100*len(trimmed)/len(genehits) ))
-    if args.debug: column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions", "Control_Diversity", "Sample_Diversity"])
+    print("{}/{}({:.2f}%) genes removed by threshold.".format(len(removed), len(genehits), 100*len(removed)/len(genehits)))
+    print("{}/{}({:.2f}%) genes remaining.".format(len(trimmed), len(genehits), 100*len(trimmed)/len(genehits)))
+    if args.debug: print("Trimmed Stats"); column_stats(trimmed, columns=["Control_Hits", "Sample_Hits", "Control_Unique_Insertions", "Sample_Unique_Insertions", "Control_Diversity", "Sample_Diversity"])
 
     # Save genes that are removed
     removed_filename = "{}/removed.csv".format(output_folder)
@@ -322,7 +303,9 @@ def pairwise_comparison(args):
 
     # Make a boolean column for the P-value and a negative log10 for the volcano plot
     trimmed["P_Sig"] = np.logical_and(trimmed["P_Value"]<args.alpha, trimmed["P_Value"]!=0)
-    trimmed["Log10P"] = -np.log10(trimmed["P_Value"])
+    pv = trimmed["P_Value"]
+    trimmed["Log10P"] = -np.log10(pv, out=np.zeros_like(pv), where=(pv!=0))
+    
     sig_genes = trimmed["P_Sig"].sum()
     print("Significant p-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
     print("Genes not tested : {}".format(np.sum(np.isnan(trimmed["P_Value"]))))
@@ -334,7 +317,7 @@ def pairwise_comparison(args):
     qvalues, new_alpha = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
     trimmed["Q_Value"] = qvalues
     trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<args.alpha, trimmed["Q_Value"]!=0)
-    trimmed["Log10Q"] = -np.log10(trimmed["Q_Value"])
+    trimmed["Log10Q"] = -np.log10(qvalues, out=np.zeros_like(qvalues), where=(qvalues!=0))
     sig_genes = trimmed["Q_Sig"].sum()
     print("Significant q-values : {} ({:.2f}%)".format(sig_genes, 100*sig_genes/len(trimmed)))
 
@@ -346,6 +329,14 @@ def pairwise_comparison(args):
     if args.plot:
         print(" * Generating plots...")
         pairwise_plots(trimmed, output_folder, args.alpha)
+
+        print("Plotting Boxplots")
+        fig = plt.figure(figsize=[3*len(test_columns), 6])
+        ax = fig.add_subplot(111)
+        tamap.copy().replace(0, np.NaN).boxplot(column=test_columns, ax=ax, showfliers=False)
+        plt.title("Hits per TA site")
+        plt.savefig(f"{output_folder}/boxplots.png")
+        plt.close(fig)
 
 
 if __name__ == "__main__":
