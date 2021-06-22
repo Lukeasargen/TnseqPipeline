@@ -13,6 +13,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         ["Start", "Hits", None, False, True],
         ["GC", "Diversity", 4, False, True],
         ["GC", "Hits", 4, False, True],
+        ["Log2FC_Reads", "Diversity", 4, False, False],
     ]
     single_plots = [ # x, y, s, xlog, ylog
         ["Gene_Length", "TA_Count", 6, True, True],
@@ -38,8 +39,8 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         ["Log2FC_Reads", 100],
         ["Log2FC_Inserts", 100],
         ["Sample_Fitness", 100],
-        ["P_Value", 20],
-        ["Q_Value", 20],
+        ["P_Value", 50],
+        ["Q_Value", 50],
     ]
 
     # print(table.columns)
@@ -56,15 +57,15 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         print("Plotting Combined: x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
-        ax.scatter(x=table[x], y=table[f"Control_{y}"], s=s, color="tab:green", label="Control")
-        ax.scatter(x=table[x], y=table[f"Sample_{y}"], s=s, color="tab:red", label="Sample")
+        ax.scatter(x=table[x], y=table[f"Control_{y}"], s=s, alpha=0.7, color="tab:green", label="Control")
+        ax.scatter(x=table[x], y=table[f"Sample_{y}"], s=s, alpha=0.7, color="tab:red", label="Sample")
         ax.set_xlabel(x)
         ax.set_ylabel(y)
         if xlog: ax.set_xscale('log')
         if ylog: ax.set_yscale('log')
         plt.legend()
         fig.tight_layout()
-        plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
+        plt.savefig(f"{output_folder}/{x}_vs_{y}.png", bbox_inches="tight")
         plt.close(fig)
 
     for x, y, s, xlog, ylog in single_plots:
@@ -73,7 +74,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         print("Plotting: x={} y={}".format(x, y))
         fig = plt.figure(figsize=[16, 8])
         ax = fig.add_subplot(111)
-        ax.scatter(x=table[x], y=table[y], s=s, color=p_sig_colors)
+        ax.scatter(x=table[x], y=table[y], s=s, alpha=0.7, color=p_sig_colors)
         # plt.hlines(table[y].median(), xmin=table[x].min(), xmax=table[x].max(), color="tab:red", label="Median={:.2f}".format(table[y].median()))
         # plt.hlines(table[y].mean(), xmin=table[x].min(), xmax=table[x].max(), color="tab:blue", label="Mean={:.2f}".format(table[y].mean()))
         ax.set_xlabel(x)
@@ -81,7 +82,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         if xlog: ax.set_xscale('log')
         if ylog: ax.set_yscale('log')
         fig.tight_layout()
-        plt.savefig(f"{output_folder}/{x}_vs_{y}.png")
+        plt.savefig(f"{output_folder}/{x}_vs_{y}.png", bbox_inches="tight")
         plt.close(fig)
 
     for col, bins in hist_plots:
@@ -93,7 +94,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         df = table[col].replace([np.inf, -np.inf], np.nan, inplace=False)
         df.plot.hist(bins=bins)
         plt.xlabel(f"{col}")
-        plt.savefig(f"{output_folder}/{col}_hist.png")
+        plt.savefig(f"{output_folder}/{col}_hist.png", bbox_inches="tight")
         plt.close(fig)
 
 
@@ -102,7 +103,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
     fig = plt.figure(figsize=[12, 8])
     A = 0.5 * ( np.log2(table["Sample_Hits"]) + np.log2(table["Control_Hits"]) )
     M = table["Log2FC_Reads"]
-    plt.scatter(x=A, y=M, s=10, color=p_sig_colors)
+    plt.scatter(x=A, y=M, s=10, alpha=0.9, color=p_sig_colors)
     plt.hlines(M.median(), xmin=A.min(), xmax=A.max(), color="tab:red", label="Median={:.2f}".format(M.median()))
     plt.hlines(M.mean(), xmin=A.min(), xmax=A.max(), color="tab:blue", label="Mean={:.2f}".format(M.mean()))
     plt.hlines([-1, 1], xmin=A.min(), xmax=A.max(), color="tab:blue", linestyle='dashed')
@@ -110,7 +111,7 @@ def pairwise_plots(table, output_folder, alpha=0.05):
     plt.xlabel("A = 1/2 * ( log2(sample) + log2(control) )")
     plt.ylabel("M = log2(sample) - log2(control)")
     fig.tight_layout()
-    plt.savefig(f"{output_folder}/MA_Plot.png")
+    plt.savefig(f"{output_folder}/MA_Plot.png", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -122,15 +123,15 @@ def pairwise_plots(table, output_folder, alpha=0.05):
         fig = plt.figure(figsize=[12, 8])
         X = table["Log2FC_Reads"]
         Y = table[col]
-        plt.scatter(x=X, y=Y, s=8, color=p_sig_colors)
+        plt.scatter(x=X, y=Y, s=8, alpha=0.9, color=p_sig_colors)
         plt.hlines(-np.log10(alpha), xmin=X.min(), xmax=X.max(), color="tab:blue", linestyle='dashed')
         plt.vlines([-1, 1], ymin=Y.min(), ymax=Y.max(), color="tab:blue", linestyle='dashed')
         plt.xlabel("log2 fold Change")
         plt.ylabel(f"-log10({col})")
         fig.tight_layout()
         plt.ylim(0, min(30, Y.max()))
-        plt.savefig(f"{output_folder}/Volcano_Plot_{col}.png")
+        plt.savefig(f"{output_folder}/Volcano_Plot_{col}.png", bbox_inches="tight")
         plt.ylim(0, min(4, Y.max()))
-        plt.savefig(f"{output_folder}/Volcano_Plot_{col}_Trim.png")
+        plt.savefig(f"{output_folder}/Volcano_Plot_{col}_Trim.png", bbox_inches="tight")
         plt.close(fig)
 

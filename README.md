@@ -20,7 +20,12 @@ git clone https://github.com/Lukeasargen/TnseqPipeline.git
 
 Install additional python requirements:
 ```
-python3 -m pip install numpy==1.17.4 pandas==1.2.4 matplotlib==3.1.2 scipy==1.3.3
+python3 -m pip install numpy==1.17.4 pandas==1.2.4 matplotlib==3.1.2 scipy==1.3.3 seaborn==0.11.1
+```
+
+Running the IPython Notebook (.ipynb files) in vscode has two more requirements. These are installed for the selected python interpreter in vscode. Run this command for the selected version of python:
+```
+python -m pip install ipykernel jupyter
 ```
 
 ## All Done Setup

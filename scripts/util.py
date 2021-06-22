@@ -58,7 +58,7 @@ def exclude_sites_tamap(tamap, exclude_first=0, exclude_last=0):
         new_start = tamap["Start"] + (1+tamap["End"]-tamap["Start"])*exclude_first
     else:
         new_start = tamap["Start"]
-    if exclude_first>0 and exclude_first<1.0:
+    if exclude_last>0 and exclude_last<1.0:
         new_end = tamap["End"] - (1+tamap["End"]-tamap["Start"])*exclude_last
     else:
         new_end = tamap["End"]
@@ -78,7 +78,7 @@ def tamap_to_genehits(tamap, fasta_filename=None, pooling="sum"):
     map_names = get_read_columns(genemap)
     # Get other gene data into a genehits df
     grouped = genemap.groupby("Gene_ID", as_index=False)
-    genehits = grouped.agg({"Start": "first", "End": 'first', "Direction": "first"})
+    genehits = grouped.agg({"Locus_Tag": "first", "Index": "first", "Start": "first", "End": 'first', "Direction": "first"})
     genehits["TA_Count"] = grouped["TA_Site"].count()["TA_Site"]
     genehits["Gene_Length"] = 1+genehits["End"] - genehits["Start"]
     # Compute GC content with the genome fasta file

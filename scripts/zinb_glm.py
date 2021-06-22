@@ -244,22 +244,23 @@ def zinb_glm_llr(data, conditions, nzmean=None, diversity=None, dist="nb", resca
     """ Compute the Likelihood ratio test on the ZINB-GLM model """
     conditions1 = np.array(conditions)
     conditions0 = [0]*len(conditions1)
-    if debug: print(" data :", np.rint(np.array(data)))
+    if debug: print(" data :", np.rint(np.array(data, dtype=np.float)))
     if rescale>0:
         data = (rescale/np.mean(data[data>0])) * data
         if debug: print("scale :", data)
-    data = np.rint(np.array(data)).astype(np.int)
+    data = np.rint(np.array(data, dtype=np.float)).astype(np.int)
     # Difference in parameters is the degrees of freedom
     # 1 dispersion, mu and pi for all conditions, minus the 3 for the condition-indepented model
     delta_df = 1 + 2*num_conditions(conditions) - 3
     # Create the observation design matrix
     Dg = None  # Default is no observation matrix, 
-    if nzmean is not None:
+    if nzmean is not None or diversity is not None:
         # It is a binary matrix for the number of samples
         # Since this test runs per gene, each gene has the same number of TA
         # site in all conditions and that information along with the number of nzmeans
         # can be used to create an observations matrix.
-        y = [i for i in range(len(nzmean)) for _ in range(int(len(conditions)/len(nzmean)))]
+        x = nzmean if nzmean is not None else diversity
+        y = [i for i in range(len(x)) for _ in range(int(len(conditions)/len(x)))]
         Dg = design_matrix(y)
     # Create the design matric for the null and alternative models
     Xg0 = design_matrix(conditions0)

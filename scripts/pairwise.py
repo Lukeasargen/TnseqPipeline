@@ -224,7 +224,8 @@ def pairwise_comparison(args):
     # This bool saves whether the gene has counts in all groups
     hit_bool = ~(genehits[["Control_Unique_Insertions", "Sample_Unique_Insertions"]] == 0).any(axis=1)
     num_hit = hit_bool.sum()
-    print("{}/{}({:.2f}%) had no insertions. {}/{}({:.2f}%) had at least one insertion.".format( len(genehits)-num_hit, len(genehits), 100*(len(genehits)-num_hit)/len(genehits), num_hit, len(genehits), 100*num_hit/len(genehits) ))
+    print("{}/{}({:.2f}%) had no insertions".format( len(genehits)-num_hit, len(genehits), 100*(len(genehits)-num_hit)/len(genehits) ))
+    print("{}/{}({:.2f}%) had at least one insertion.".format( num_hit, len(genehits), 100*num_hit/len(genehits) ))
 
     # Save genes that had no insertions in at least one group
     no_hit_filename = "{}/no_hits.csv".format(output_folder)
@@ -315,6 +316,8 @@ def pairwise_comparison(args):
     # The same as above but for adjusted Q-values
     print(" * Adjusting p-values for multiple test...")
     qvalues, new_alpha = bh_procedure(np.nan_to_num(trimmed["P_Value"]))
+    print("New Alpha :", new_alpha)
+    qvalues[qvalues==0] = np.nan
     trimmed["Q_Value"] = qvalues
     trimmed["Q_Sig"] = np.logical_and(trimmed["Q_Value"]<args.alpha, trimmed["Q_Value"]!=0)
     trimmed["Log10Q"] = -np.log10(qvalues, out=np.zeros_like(qvalues), where=(qvalues!=0))
@@ -333,8 +336,10 @@ def pairwise_comparison(args):
         print("Plotting Boxplots")
         fig = plt.figure(figsize=[3*len(test_columns), 6])
         ax = fig.add_subplot(111)
-        tamap.copy().replace(0, np.NaN).boxplot(column=test_columns, ax=ax, showfliers=False)
+        np.log10(tamap[test_columns].copy().replace(0, np.NaN)).boxplot(column=test_columns, ax=ax, showfliers=True)
         plt.title("Hits per TA site")
+        ax.set_xlabel("Condition")
+        ax.set_ylabel("log10(Hits)")
         plt.savefig(f"{output_folder}/boxplots.png")
         plt.close(fig)
 
