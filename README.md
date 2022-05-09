@@ -216,15 +216,14 @@ There are several other arguments. This is the help message.
 
 ```
 usage: pairwise.py [-h] --experiment EXPERIMENT --index INDEX --controls CONTROLS
-                   [CONTROLS ...] --samples SAMPLES [SAMPLES ...]
-                   [--output OUTPUT] [--debug] [--plot]
-                   [--norm {total,quantile,ttr}] [--quantile QUANTILE] [--ttr TTR]
-                   [--strand {both,forward,reverse}] [--alpha ALPHA]
+                   [CONTROLS ...] --samples SAMPLES [SAMPLES ...] [--output OUTPUT]
+                   [--debug] [--plot] [--norm {total,quantile,ttr,nzmean}]
+                   [--quantile QUANTILE] [--ttr TTR] [--strand {both,forward,reverse}]
+                   [--stat {mannu,ttest,wilcoxon,zinb}] [--alpha ALPHA]
                    [--min_count MIN_COUNT] [--min_inserts MIN_INSERTS]
                    [--min_sites MIN_SITES] [--pooling {sum,average}]
-                   [--smoothing SMOOTHING] [--expansion EXPANSION]
-                   [--insert_weighting] [--length_norm] [--gc]
-                   [--ef EXCLUDE_FIRST] [--el EXCLUDE_LAST]
+                   [--smoothing SMOOTHING] [--expansion EXPANSION] [--insert_weighting]
+                   [--length_norm] [--gc] [--ef EXCLUDE_FIRST] [--el EXCLUDE_LAST]
 
 Pairwise Comparison (Supports Replicates).
 
@@ -234,71 +233,67 @@ optional arguments:
                         Experiment folder name.
   --index INDEX         Index name.
   --controls CONTROLS [CONTROLS ...]
-                        List read names without the filetype and separated by a
-                        space.
+                        List read names without the filetype and separated by a space.
   --samples SAMPLES [SAMPLES ...]
-                        List read names without the filetype and separated by a
-                        space.
+                        List read names without the filetype and separated by a space.
   --output OUTPUT       Output name. Analysis outputs to a folder with this name.
                         default=default.
-  --debug               Boolean flag that outputs all my debugging messages.
+  --debug               Boolean flag that outputs all my debugging messages. default=False.
+  --plot                Boolean flag that automatically makes a few plots of the data.
                         default=False.
-  --plot                Boolean flag that automatically makes a few plots of the
-                        data. default=False.
-  --norm {total,quantile,ttr}
-                        String argument. Choose the normalization between total
-                        count, quantile, or ttr (total trimmed reads).
+  --norm {total,quantile,ttr,nzmean}
+                        String argument. Choose the normalization between total count,
+                        quantile, ttr (Total Trimmed Reads), nzmean (Non-Zero Mean).
                         default=ttr.
   --quantile QUANTILE   Float argument. Quantile used to normalize. default=0.75.
-  --ttr TTR             Float argument. Percentage of the highest and lowest
-                        values which are excluded before calculating the mean.
-                        default=0.05.
+  --ttr TTR             Float argument. Percentage of the highest and lowest values which
+                        are excluded before calculating the mean. default=0.05.
   --strand {both,forward,reverse}
-                        String argument. Specify strand for analysis.
-                        default=both.
+                        String argument. Specify strand for analysis. default=both.
+  --stat {mannu,ttest,wilcoxon,zinb}
+                        String argument. Choose the statistical test between mannu (Mann
+                        Whitney U test), ttest (T test), wilcoxon, zinb (Zero-Inflated
+                        Binomial Regression). default=None.
   --alpha ALPHA         Float argument. Significance level. default=0.05.
   --min_count MIN_COUNT
-                        Integer argument. Threshold for lowest number of
-                        insertions PER GENE after pooling. Removes genes with
-                        insertions. These genes are not tested for significance
-                        and saved in a separate output table. default=1.
+                        Integer argument. Threshold for lowest number of insertions PER
+                        GENE after pooling. Removes genes with insertions. These genes are
+                        not tested for significance and saved in a separate output table.
+                        default=1.
   --min_inserts MIN_INSERTS
-                        Integer argument. Threshold for lowest number of insertion
-                        sites with hits BY GENE. Removes genes with low hit
-                        diversity (unique insertion sites). These genes are not
-                        tested for significance and saved in a separate output
-                        table. default=2.
+                        Integer argument. Threshold for lowest number of insertion sites
+                        with hits BY GENE. Removes genes with low hit diversity (unique
+                        insertion sites). These genes are not tested for significance and
+                        saved in a separate output table. default=2.
   --min_sites MIN_SITES
-                        Integer argument. Threshold for lowest number of insertion
-                        sites with hits BY GENE. Removes genes with low TA sites
-                        (TA_Count < min_sites). These genes are not tested for
-                        significance and saved in a separate output table.
-                        default=0.
+                        Integer argument. Threshold for lowest number of insertion sites
+                        with hits BY GENE. Removes genes with low TA sites (TA_Count <
+                        min_sites). These genes are not tested for significance and saved
+                        in a separate output table. default=0.
   --pooling {sum,average}
-                        String argument. Sum or average the hits PER GENE to get a
-                        merged value for the expression at the gene level.
-                        default=sum.
+                        String argument. Sum or average the hits PER GENE to get a merged
+                        value for the expression at the gene level. default=sum.
   --smoothing SMOOTHING
                         Float argument. Smooth the ratio for small counts.
                         ratio=(sample+smoothing)/(control+smoothing). default=1.
   --expansion EXPANSION
-                        Float argument. Expansion factor used in the fitness
-                        formula described by Opijnen (Nature 2009). default=250.
-  --insert_weighting    Boolean flag that scales PER GENE based on unique inserts.
-                        The Formula is
+                        Float argument. Expansion factor used in the fitness formula
+                        described by Opijnen (Nature 2009). default=250.
+  --insert_weighting    Boolean flag that scales PER GENE based on unique inserts. The
+                        Formula is
                         new_hits=old_hits*(unique_inserts/average_unique_inserts).
                         default=False.
   --length_norm         Boolean flag that scales PER GENE based on gene length.
                         default=False.
-  --gc                  Boolean flag that calculates the GC content of each gene.
-                        Not used in any test, but it makes some plots and gets
-                        saved in the output. default=False.
+  --gc                  Boolean flag that calculates the GC content of each gene. Not used
+                        in any test, but it makes some plots and gets saved in the output.
+                        default=False.
   --ef EXCLUDE_FIRST, --exclude_first EXCLUDE_FIRST
-                        Float argument. Exclude insertions in the first X percent
-                        of the gene. default=0.
+                        Float argument. Exclude insertions in the first X percent of the
+                        gene. default=0.
   --el EXCLUDE_LAST, --exclude_last EXCLUDE_LAST
-                        Float argument. Exclude insertions in the last X percent
-                        of the gene. default=0.
+                        Float argument. Exclude insertions in the last X percent of the
+                        gene. default=0.
 ```
 
 
